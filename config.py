@@ -8,8 +8,19 @@ ROVER_PORT = 5000
 # ---- Model ----
 MODEL = "gemma-4-31b"
 
+# ---- Rate limit ----
+# Cerebras enforces ~100 requests/min. Each control loop makes 2 API calls
+# (perceive + plan; safety is local). Blowing past the limit returns HTTP 429,
+# which is why a naive fixed sleep "works" at 1200ms but stalls at 600ms.
+# The limiter (ratelimit.py) throttles to MAX_RPM and backs off on 429 so the
+# loop degrades smoothly instead of erroring. Keep margin under the hard 100.
+MAX_RPM = 90.0
+
 # ---- Control loop ----
 LOOP_HZ = 3.0                 # target perceive->act cycles per second
+                              # NOTE: actual rate is capped by MAX_RPM via the
+                              # limiter. 2 calls/loop * LOOP_HZ must stay under
+                              # MAX_RPM/60 or the limiter throttles the loop.
 MOVE_PULSE_SEC = 0.6          # how long each motion command runs before re-looking
 TURN_SPEED = 0.25             # wheel speed for turning (m/s-ish, tune)
 FWD_SPEED = 0.25              # wheel speed forward

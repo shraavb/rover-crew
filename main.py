@@ -24,7 +24,7 @@ def main():
     banner(f"MISSION: find the {target!r}")
 
     print("warming up model...")
-    agents.client.chat.completions.create(
+    agents._create(
         model=config.MODEL,
         messages=[{"role": "user", "content": "ready?"}],
         max_tokens=5,
@@ -39,8 +39,9 @@ def main():
 
             jpg = rover.get_frame()
 
-            per = agents.perceive(jpg, target)
-            pl = agents.plan(per, target)
+            # perceive + plan merged into one call (per loop: 1 vision call + local safety)
+            pl = agents.sense_plan(jpg, target)
+            per = pl  # perception fields live in the same dict
             action = pl["action"]
             safe = agents.safety_check(per, action)
             if not safe["approved"]:
