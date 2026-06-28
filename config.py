@@ -39,6 +39,11 @@ SIM_TURN_RAD = 0.5    # radians per turn step     (SDK caps at pi)
 # SIM_MOCK_FRAME=1 -> use the SDK's deterministic placeholder frame instead of a
 # real render. Validates the loop plumbing when the sim isn't rendering yet.
 SIM_MOCK_FRAME = os.environ.get("SIM_MOCK_FRAME") == "1"
+# The Cyberwave sim simulates MOTION only, not a camera. So sim perception needs
+# a real camera. SIM_FRAME=webcam -> hybrid: laptop webcam for frames, motion
+# still driven to the twin. "cloud" (default) expects a real camera streamed to
+# the twin via the edge SDK.
+SIM_FRAME = (os.environ.get("SIM_FRAME") or "cloud").lower()
 
 # ---- Rate limit ----
 # Cerebras enforces ~100 requests/min. Each control loop makes 2 API calls

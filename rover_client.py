@@ -104,8 +104,16 @@ def _sim_do_action(action: str):
 
 
 # ---------- public ----------
-get_frame = {"sim": _sim_get_frame, "mock": _mock_get_frame, "real": _real_get_frame}[MODE]
-send_cmd = {"sim": _sim_send_cmd, "mock": _mock_send_cmd, "real": _real_send_cmd}[MODE]
+_GET_FRAME = {"sim": _sim_get_frame, "mock": _mock_get_frame, "real": _real_get_frame}
+_SEND_CMD = {"sim": _sim_send_cmd, "mock": _mock_send_cmd, "real": _real_send_cmd}
+
+# Hybrid: the Cyberwave sim has no synthetic camera, so SIM_FRAME=webcam takes
+# perception from the laptop webcam while motion still drives the twin.
+if MODE == "sim" and config.SIM_FRAME == "webcam":
+    get_frame = _mock_get_frame
+else:
+    get_frame = _GET_FRAME[MODE]
+send_cmd = _SEND_CMD[MODE]
 
 
 def do_action(action: str):
