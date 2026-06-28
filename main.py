@@ -25,7 +25,7 @@ def main():
     body = {"sim": "Cyberwave UGV Beast (digital twin)",
             "mock": "laptop webcam (no motors)"}.get(rover.MODE, f"rover @ {config.ROVER_HOST}")
     print(f"brain : Cerebras · {config.MODEL} (multimodal)")
-    print(f"agents: perception+planner (1 vision call) -> safety")
+    print(f"agents: perception -> planner -> critic -> safety (4 Gemma-4 calls/loop)")
     print(f"body  : {body}")
 
     print("warming up model...")
@@ -44,11 +44,12 @@ def main():
 
             jpg = rover.get_frame()
 
-            # perceive + plan merged into one call (per loop: 1 vision call + local safety)
-            pl = agents.sense_plan(jpg, target)
-            per = pl  # perception fields live in the same dict
-            action = pl["action"]
-            safe = agents.safety_check(per, action)
+            # Multi-agent crew, each an independent Gemma-4 call on Cerebras:
+            per = agents.perceive(jpg, target)        # 1. multimodal perception
+            pl = agents.plan(per, target)             # 2. planner
+            crit = agents.critique(per, pl, target)   # 3. critic (goal alignment)
+            action = crit["action"]
+            safe = agents.safety_check(per, action)   # 4. safety veto
             if not safe["approved"]:
                 action = safe["override"]
 
@@ -57,8 +58,9 @@ def main():
                 f"[{step:03d}] {dt*1000:4.0f}ms | "
                 f"see={per.get('target_visible')} bearing={per.get('bearing')} "
                 f"dist={per.get('distance')} obs={per.get('obstacle_ahead')} "
-                f"| plan={pl['action']} ({pl.get('reason','')}) "
-                f"| safety={safe['reason']} -> DO {action}"
+                f"| plan={pl.get('action')} | critic={crit.get('action')}"
+                f"{'*' if crit.get('changed') else ''} ({crit.get('reason','')}) "
+                f"| safety={safe.get('reason')} -> DO {action}"
             )
 
             if action == "done":

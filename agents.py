@@ -173,9 +173,45 @@ def sense_plan(jpg: bytes, target: str) -> dict:
     )
 
 
-# ---------- Agent 3: Safety ----------
+# ---------- Agent 3: Critic (goal-alignment reviewer) ----------
+def critique(perception: dict, plan_out: dict, target: str) -> dict:
+    """Review the planner's action against perception + goal; correct if wrong."""
+    prompt = (
+        f'You are the CRITIC agent. Goal: reach the "{target}".\n'
+        f"Perception: {json.dumps(perception)}\n"
+        f"Planner proposed: {json.dumps(plan_out)}\n"
+        "Sanity-check the action against perception and the goal. Correct it if "
+        "the planner erred (e.g. forward while the target is off-center, "
+        "searching while the target is centered, or done when not near). "
+        "Otherwise keep it.\n"
+        'Reply ONLY JSON: {"action": "forward"|"turn_left"|"turn_right"|"stop"|"done", '
+        '"reason": "<8-word reason>", "changed": true/false}'
+    )
+    return _json_call([{"role": "user", "content": prompt}])
+
+
+# ---------- Agent 4: Safety (LLM veto + deterministic backstop) ----------
 def safety_check(perception: dict, proposed_action: str) -> dict:
-    """Veto unsafe moves (drive forward into an obstacle)."""
+    """Final safety gate. A deterministic hard rule guarantees we never drive
+    into a known obstacle; a Gemma safety reviewer handles nuanced cases."""
+    # Deterministic backstop — never overridden by the LLM.
     if proposed_action == "forward" and perception.get("obstacle_ahead"):
-        return {"approved": False, "override": "turn_left", "reason": "obstacle ahead"}
-    return {"approved": True, "override": None, "reason": "clear"}
+        return {"approved": False, "override": "turn_left", "reason": "obstacle ahead (hard rule)"}
+    # LLM safety reviewer.
+    prompt = (
+        "You are the SAFETY agent on a small ground rover.\n"
+        f"Perception: {json.dumps(perception)}\n"
+        f"Proposed action: {proposed_action}\n"
+        "Veto (approved=false) only if the action risks a collision or is clearly "
+        "unsafe given perception, and give a safer override. Otherwise approve.\n"
+        'Reply ONLY JSON: {"approved": true/false, '
+        '"override": "forward"|"turn_left"|"turn_right"|"stop"|null, '
+        '"reason": "<8-word reason>"}'
+    )
+    try:
+        out = _json_call([{"role": "user", "content": prompt}])
+        if out.get("approved") is False and not out.get("override"):
+            out["override"] = "stop"
+        return out
+    except Exception:
+        return {"approved": True, "override": None, "reason": "clear (llm fallback)"}
