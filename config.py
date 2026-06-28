@@ -5,6 +5,8 @@ there instead of being exported each shell. Imported first by every module, so
 keys are in os.environ before agents.py / rover_client.py read them.
 """
 
+import os
+
 try:
     from dotenv import load_dotenv
     load_dotenv()  # reads .env from cwd up the tree; real env vars still win
@@ -23,9 +25,20 @@ MODEL = "gemma-4-31b"
 # Digital twin of the UGV Beast. Auth via CYBERWAVE_API_KEY env var; create the
 # twin in the dashboard (Add from Catalog -> UGV Beast). Motion is high-level
 # (metres / radians), not the differential L/R serial cmds the real rover uses.
+# Preferred: connect to an exact twin by UUID (from the dashboard, twin -> Copy
+# UUID). Set CYBERWAVE_TWIN_ID in .env. Bypasses env/asset resolution entirely.
+CW_TWIN_ID = os.environ.get("CYBERWAVE_TWIN_ID")
+
+# Fallback when no twin UUID: look up by asset in a given environment.
 CW_TWIN = "waveshare/ugv-beast"
+# Must be a UUID or a FULL unified slug "<workspace>/<env>" (a bare env name has
+# no '/', so the SDK won't resolve it). Env var wins.
+CW_ENV = os.environ.get("CYBERWAVE_ENVIRONMENT_ID") or "shraavasti-bhats-workspace/ugv-rover"
 SIM_STEP_M = 0.3      # metres per forward step   (SDK caps at 1.0)
 SIM_TURN_RAD = 0.5    # radians per turn step     (SDK caps at pi)
+# SIM_MOCK_FRAME=1 -> use the SDK's deterministic placeholder frame instead of a
+# real render. Validates the loop plumbing when the sim isn't rendering yet.
+SIM_MOCK_FRAME = os.environ.get("SIM_MOCK_FRAME") == "1"
 
 # ---- Rate limit ----
 # Cerebras enforces ~100 requests/min. Each control loop makes 2 API calls

@@ -51,21 +51,29 @@ def main():
               "export CYBERWAVE_API_KEY=... (from your Cyberwave profile)"
               if not os.environ.get("CYBERWAVE_API_KEY") else "")
         try:
-            import cv2  # noqa: F401
             from cyberwave import Cyberwave
             cw = Cyberwave()
             cw.affect("simulation")
-            twin = cw.twin(config.CW_TWIN)
-            frame = twin.capture_frame("numpy")
-            ok = frame is not None and getattr(frame, "size", 0) > 0
-            check(f"twin {config.CW_TWIN} returns a frame", ok,
-                  f"{frame.shape[1]}x{frame.shape[0]}" if ok else "empty frame")
+            if config.CW_TWIN_ID:
+                twin = cw.twin(twin_id=config.CW_TWIN_ID)
+            else:
+                twin = cw.twin(config.CW_TWIN, environment_id=config.CW_ENV)
+            jpg = twin.get_frame("bytes", mock=config.SIM_MOCK_FRAME)  # cloud render
+            ok = bool(jpg) and jpg[:3].hex() == "ffd8ff"
+            detail = (f"{len(jpg)} bytes JPEG" if ok else
+                      "NOT an image — start the sim (SIMULATE tab) or use "
+                      "SIM_MOCK_FRAME=1: " +
+                      (jpg[:120].decode("utf-8", "replace") if jpg else "empty"))
+            check(f"twin {config.CW_TWIN} returns a frame", ok, detail)
         except ImportError:
             check("cyberwave SDK importable", False,
                   "pip install 'cyberwave[camera]' (and brew install ffmpeg)")
         except Exception as e:  # noqa: BLE001
+            import re
+            # SDK errors can embed the Authorization header — never print the token.
+            msg = re.sub(r"Bearer\s+\S+", "Bearer <redacted>", str(e)).splitlines()[0]
             check(f"connect twin {config.CW_TWIN}", False,
-                  f"{type(e).__name__}: {e} (twin created in dashboard? key valid?)")
+                  f"{type(e).__name__}: {msg} (twin created in dashboard? key valid?)")
     elif MOCK:
         print("2. Webcam (mock mode)")
         try:

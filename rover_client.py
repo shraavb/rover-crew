@@ -62,17 +62,27 @@ def _sim_twin():
         from cyberwave import Cyberwave  # lazy: only needed in sim mode
         cw = Cyberwave()                  # CYBERWAVE_API_KEY from env
         cw.affect("simulation")
-        _twin = cw.twin(config.CW_TWIN)
+        if config.CW_TWIN_ID:
+            _twin = cw.twin(twin_id=config.CW_TWIN_ID)
+        else:
+            _twin = cw.twin(config.CW_TWIN, environment_id=config.CW_ENV)
     return _twin
 
 
 def _sim_get_frame() -> bytes:
-    import cv2
-    frame = _sim_twin().capture_frame("numpy")  # BGR ndarray
-    ok, buf = cv2.imencode(".jpg", frame)
-    if not ok:
-        raise RuntimeError("sim frame encode failed")
-    return buf.tobytes()
+    # In simulation mode frames come from the cloud render (source="cloud" is the
+    # get_frame default); "bytes" returns JPEG directly.
+    jpg = _sim_twin().get_frame("bytes", mock=config.SIM_MOCK_FRAME)
+    # The endpoint fail-softs to a JSON error body (not an image) when the sim has
+    # no rendered frame. Reject non-JPEG so we never ship junk to the VLM.
+    if not jpg or jpg[:3].hex() != "ffd8ff":
+        detail = jpg[:200].decode("utf-8", "replace") if jpg else "empty response"
+        raise RuntimeError(
+            "sim returned no camera frame. Start the simulation in the dashboard "
+            "(SIMULATE tab) so the camera renders, or set SIM_MOCK_FRAME=1 to test "
+            f"the loop with a placeholder. server: {detail}"
+        )
+    return jpg
 
 
 def _sim_send_cmd(cmd: dict):
