@@ -8,6 +8,14 @@ ROVER_PORT = 5000
 # ---- Model ----
 MODEL = "gemma-4-31b"
 
+# ---- Cyberwave sim backend (USE_SIM=1) ----
+# Digital twin of the UGV Beast. Auth via CYBERWAVE_API_KEY env var; create the
+# twin in the dashboard (Add from Catalog -> UGV Beast). Motion is high-level
+# (metres / radians), not the differential L/R serial cmds the real rover uses.
+CW_TWIN = "waveshare/ugv-beast"
+SIM_STEP_M = 0.3      # metres per forward step   (SDK caps at 1.0)
+SIM_TURN_RAD = 0.5    # radians per turn step     (SDK caps at pi)
+
 # ---- Rate limit ----
 # Cerebras enforces ~100 requests/min. Each control loop makes 2 API calls
 # (perceive + plan; safety is local). Blowing past the limit returns HTTP 429,

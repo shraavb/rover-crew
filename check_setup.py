@@ -2,8 +2,9 @@
 
     ./.venv/bin/python check_setup.py          # full check (pings the Pi)
     ./.venv/bin/python check_setup.py --mock    # skip Pi, check laptop/webcam only
+    ./.venv/bin/python check_setup.py --sim     # check Cyberwave digital twin
 
-Read-only: GETs the camera frame but sends NO motor commands (won't move the
+Read-only: captures a camera frame but sends NO motor commands (won't move the
 rover). Motor wiring is verified separately while you watch the rover.
 """
 import os
@@ -12,6 +13,7 @@ import sys
 import config
 
 MOCK = "--mock" in sys.argv
+SIM = "--sim" in sys.argv
 PASS, FAIL = 0, 0
 
 
@@ -43,7 +45,28 @@ def main():
         check("python deps importable", True)
     print()
 
-    if MOCK:
+    if SIM:
+        print("2. Cyberwave digital twin (sim mode)")
+        check("CYBERWAVE_API_KEY set", bool(os.environ.get("CYBERWAVE_API_KEY")),
+              "export CYBERWAVE_API_KEY=... (from your Cyberwave profile)"
+              if not os.environ.get("CYBERWAVE_API_KEY") else "")
+        try:
+            import cv2  # noqa: F401
+            from cyberwave import Cyberwave
+            cw = Cyberwave()
+            cw.affect("simulation")
+            twin = cw.twin(config.CW_TWIN)
+            frame = twin.capture_frame("numpy")
+            ok = frame is not None and getattr(frame, "size", 0) > 0
+            check(f"twin {config.CW_TWIN} returns a frame", ok,
+                  f"{frame.shape[1]}x{frame.shape[0]}" if ok else "empty frame")
+        except ImportError:
+            check("cyberwave SDK importable", False,
+                  "pip install 'cyberwave[camera]' (and brew install ffmpeg)")
+        except Exception as e:  # noqa: BLE001
+            check(f"connect twin {config.CW_TWIN}", False,
+                  f"{type(e).__name__}: {e} (twin created in dashboard? key valid?)")
+    elif MOCK:
         print("2. Webcam (mock mode)")
         try:
             import cv2
