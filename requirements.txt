@@ -1,0 +1,5 @@
+cerebras-cloud-sdk
+requests
+opencv-python
+flask
+pyserial
