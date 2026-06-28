@@ -1,4 +1,15 @@
-"""Central config. Edit ROVER_HOST + SERIAL_PORT + command map for your Waveshare UGV."""
+"""Central config. Edit ROVER_HOST + SERIAL_PORT + command map for your Waveshare UGV.
+
+Loads a .env file (if present) so CEREBRAS_API_KEY / CYBERWAVE_API_KEY can live
+there instead of being exported each shell. Imported first by every module, so
+keys are in os.environ before agents.py / rover_client.py read them.
+"""
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # reads .env from cwd up the tree; real env vars still win
+except ImportError:
+    pass  # dotenv optional; fall back to exported env vars
 
 # ---- Networking ----
 # IP of the rover's Raspberry Pi on your WiFi (run `hostname -I` on the Pi).
