@@ -22,6 +22,11 @@ def banner(s):
 def main():
     target = sys.argv[1] if len(sys.argv) > 1 else "red cup"
     banner(f"MISSION: find the {target!r}")
+    body = {"sim": "Cyberwave UGV Beast (digital twin)",
+            "mock": "laptop webcam (no motors)"}.get(rover.MODE, f"rover @ {config.ROVER_HOST}")
+    print(f"brain : Cerebras · {config.MODEL} (multimodal)")
+    print(f"agents: perception+planner (1 vision call) -> safety")
+    print(f"body  : {body}")
 
     print("warming up model...")
     agents._create(
