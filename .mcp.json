@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cyberwave-docs": {
+      "type": "http",
+      "url": "https://docs.cyberwave.com/mcp"
+    }
+  }
+}

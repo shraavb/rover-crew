@@ -1,4 +1,5 @@
 cerebras-cloud-sdk
+python-dotenv
 requests
 opencv-python
 flask

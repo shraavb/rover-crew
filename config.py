@@ -1,4 +1,15 @@
-"""Central config. Edit ROVER_HOST + SERIAL_PORT + command map for your Waveshare UGV."""
+"""Central config. Edit ROVER_HOST + SERIAL_PORT + command map for your Waveshare UGV.
+
+Loads a .env file (if present) so CEREBRAS_API_KEY / CYBERWAVE_API_KEY can live
+there instead of being exported each shell. Imported first by every module, so
+keys are in os.environ before agents.py / rover_client.py read them.
+"""
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # reads .env from cwd up the tree; real env vars still win
+except ImportError:
+    pass  # dotenv optional; fall back to exported env vars
 
 # ---- Networking ----
 # IP of the rover's Raspberry Pi on your WiFi (run `hostname -I` on the Pi).
@@ -8,8 +19,27 @@ ROVER_PORT = 5000
 # ---- Model ----
 MODEL = "gemma-4-31b"
 
+# ---- Cyberwave sim backend (USE_SIM=1) ----
+# Digital twin of the UGV Beast. Auth via CYBERWAVE_API_KEY env var; create the
+# twin in the dashboard (Add from Catalog -> UGV Beast). Motion is high-level
+# (metres / radians), not the differential L/R serial cmds the real rover uses.
+CW_TWIN = "waveshare/ugv-beast"
+SIM_STEP_M = 0.3      # metres per forward step   (SDK caps at 1.0)
+SIM_TURN_RAD = 0.5    # radians per turn step     (SDK caps at pi)
+
+# ---- Rate limit ----
+# Cerebras enforces ~100 requests/min. Each control loop makes 2 API calls
+# (perceive + plan; safety is local). Blowing past the limit returns HTTP 429,
+# which is why a naive fixed sleep "works" at 1200ms but stalls at 600ms.
+# The limiter (ratelimit.py) throttles to MAX_RPM and backs off on 429 so the
+# loop degrades smoothly instead of erroring. Keep margin under the hard 100.
+MAX_RPM = 90.0
+
 # ---- Control loop ----
 LOOP_HZ = 3.0                 # target perceive->act cycles per second
+                              # NOTE: actual rate is capped by MAX_RPM via the
+                              # limiter. 2 calls/loop * LOOP_HZ must stay under
+                              # MAX_RPM/60 or the limiter throttles the loop.
 MOVE_PULSE_SEC = 0.6          # how long each motion command runs before re-looking
 TURN_SPEED = 0.25             # wheel speed for turning (m/s-ish, tune)
 FWD_SPEED = 0.25              # wheel speed forward
