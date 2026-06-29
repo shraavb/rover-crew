@@ -1,18 +1,19 @@
-"""Roro's entry point: turn a command (typed or spoken) into a behavior.
+"""Roro's entry point: always-on voice control with mid-motion preemption.
 
-    # typed natural command (no mic):
-    ./.venv/bin/python main.py "move away from the orange case"
-    ./.venv/bin/python main.py "orange case"          # bare object -> approach
-
-    # spoken command (Whisper -> Gemma intent):
+    # always-on wake word -- say "Roro <command>" anytime, even while moving:
     ./.venv/bin/python main.py voice
+    ./.venv/bin/python main.py "orange case"     # start a command, still listening
 
     # dev without a robot: USE_MOCK=1 (laptop webcam) / USE_SIM=1 / USE_MJC=1
 
-Gemma parses the command into {intent, target, direction}; behaviors.py runs the
-matching control policy (approach / retreat / go_around / turn / avoid).
+A background thread listens for "Roro ..." continuously; Gemma parses each
+command into {intent, target, direction}; behaviors.py runs the matching policy.
+A new command preempts the current behavior at the next step boundary (~1s).
+Ctrl-C to quit.
 """
 import sys
+import threading
+import time
 
 import agents
 import config
@@ -21,10 +22,35 @@ import rover_client as rover
 import voice
 
 
+def supervise(initial_cmd):
+    """Run behaviors back-to-back, swapping to whatever the listener queues next.
+    initial_cmd runs first (None -> idle until the first 'Roro ...')."""
+    stop_event = threading.Event()
+    listener = threading.Thread(
+        target=voice.listen_loop, args=(behaviors.set_pending, stop_event),
+        daemon=True)
+    listener.start()
+
+    current = initial_cmd
+    try:
+        while True:
+            if current is None:                      # idle: wait for a command
+                while not behaviors.has_pending():
+                    time.sleep(0.2)
+                current = behaviors.take_pending()
+            behaviors.run(current)                   # 'done' or 'preempted'
+            # Pick up a queued command if any (preemption or arrived-during-run);
+            # otherwise go idle and wait for the next "Roro ...".
+            current = behaviors.take_pending()
+    except KeyboardInterrupt:
+        print("\nshutting down")
+    finally:
+        stop_event.set()
+        rover.send_cmd(config.cmd_stop())
+
+
 def main():
-    arg = " ".join(sys.argv[1:]).strip()
-    if not arg:
-        arg = "orange case"
+    arg = " ".join(sys.argv[1:]).strip() or "voice"
 
     body = {"sim": "Cyberwave UGV Beast (digital twin)",
             "mjc": "MuJoCo simulation (onboard camera)",
@@ -36,14 +62,12 @@ def main():
     agents._create(model=config.MODEL,
                    messages=[{"role": "user", "content": "ready?"}], max_tokens=5)
 
-    # Voice mode speaks the command; otherwise the CLI text IS the command.
-    if arg == "voice":
-        cmd = voice.get_command_by_voice()
-    else:
-        cmd = voice.parse_command(arg)
-    behaviors.banner(f"COMMAND: {cmd}")
-
-    behaviors.run(cmd)
+    # `voice` -> pure always-on (idle until first wake word). Any other text is an
+    # initial command; the always-on listener still runs so you can interrupt it.
+    initial = None if arg == "voice" else voice.parse_command(arg)
+    if initial:
+        behaviors.banner(f"COMMAND: {initial}")
+    supervise(initial)
 
 
 if __name__ == "__main__":

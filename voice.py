@@ -116,6 +116,59 @@ def parse_command(text: str) -> dict:
     }
 
 
+# Wake word + common Whisper mishearings of "Roro".
+WAKE_WORDS = ("roro", "ro ro", "ro-ro", "rover", "roto", "roaro", "rolo",
+              "roar", "oro", "yoyo", "lolo", "robo")
+
+
+def _strip_wake(text: str) -> str:
+    """Return the command part after the first wake word occurrence."""
+    low = text.lower()
+    best = -1
+    wlen = 0
+    for w in WAKE_WORDS:
+        i = low.find(w)
+        if i != -1 and (best == -1 or i < best):
+            best, wlen = i, len(w)
+    if best == -1:
+        return text
+    return text[best + wlen:].lstrip(" ,.!?").strip()
+
+
+def _record_window(seconds: float) -> np.ndarray:
+    """Record a fixed-length mono 16 kHz window from the default mic."""
+    audio = sd.rec(int(seconds * SAMPLE_RATE), samplerate=SAMPLE_RATE,
+                   channels=1, dtype="float32")
+    sd.wait()
+    return audio.flatten()
+
+
+def listen_loop(on_command, stop_event, window: float = 3.0):
+    """Always-on listener: transcribe rolling windows, and when a window starts
+    with the wake word 'Roro', parse the rest as a command and hand it to
+    on_command(cmd). Runs until stop_event is set. Meant to run in a thread."""
+    _get_model()  # warm the model before announcing readiness
+    print("[voice] 👂 always-on: say 'Roro <command>' anytime")
+    while not stop_event.is_set():
+        audio = _record_window(window)
+        if stop_event.is_set():
+            break
+        text = transcribe(audio)
+        if not text:
+            continue
+        low = text.lower()
+        if not any(w in low for w in WAKE_WORDS):
+            continue
+        cmd_text = _strip_wake(text)
+        if not cmd_text:
+            print(f"[voice] (wake only: {text!r})")
+            continue
+        print(f"[voice] heard: {text!r}")
+        cmd = parse_command(cmd_text)
+        print(f"[voice] command: {cmd}")
+        on_command(cmd)
+
+
 def get_command_by_voice() -> dict:
     """Full pipeline: record -> transcribe -> parse command. intent 'unknown' on failure."""
     audio = record_until_enter()

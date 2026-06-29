@@ -6,11 +6,17 @@ stop-look-move cadence -- pulse a motion, stop, let the camera settle, then
 capture a sharp frame for the next decision (continuous driving blurs every
 frame and perception goes blind).
 
+Preemption: behaviors check a shared interrupt at every step boundary, so a new
+voice command ("Roro, stop / move away") can abort the current behavior mid-run.
+The supervisor (main.py) feeds new commands via set_pending() and picks up the
+next one via take_pending().
+
     run({"intent": "retreat", "target": "orange case", "direction": None})
 
 Intents: approach, retreat, go_around, turn, avoid, stop.
 """
 import os
+import threading
 import time
 
 import agents
@@ -20,6 +26,38 @@ import rover_client as rover
 
 def banner(s):
     print("\n" + "=" * 60 + f"\n{s}\n" + "=" * 60)
+
+
+# ---------- preemption: shared command slot + interrupt ----------
+_interrupt = threading.Event()
+_pending = None
+_lock = threading.Lock()
+
+
+def set_pending(cmd: dict):
+    """Queue a new command and signal the running behavior to abort (thread-safe)."""
+    global _pending
+    with _lock:
+        _pending = cmd
+    _interrupt.set()
+
+
+def take_pending():
+    """Pop the queued command (or None) and clear the interrupt."""
+    global _pending
+    with _lock:
+        cmd, _pending = _pending, None
+    _interrupt.clear()
+    return cmd
+
+
+def has_pending() -> bool:
+    return _pending is not None
+
+
+def aborted() -> bool:
+    """True if a new command arrived -- behaviors poll this each step."""
+    return _interrupt.is_set()
 
 
 # ---------- shared helpers ----------
@@ -49,10 +87,12 @@ def _log(step: int, per: dict, action: str):
 
 
 # ---------- intent: approach (move toward X) ----------
-def approach(target: str) -> bool:
+def approach(target: str) -> str:
     """Search for the target, face it, drive in, stop when near. (proven logic)"""
     search_dir = "turn_" + config.SEARCH_DIR
     for step in range(1, config.MAX_STEPS + 1):
+        if aborted():
+            return "preempted"
         per = _look(target)
         visible, bearing, dist = (per.get("target_visible"),
                                   per.get("bearing"), per.get("distance"))
@@ -72,39 +112,42 @@ def approach(target: str) -> bool:
         if action == "done":
             rover.do_action("stop")
             banner(f"REACHED {target!r} in {step} steps 🎯")
-            return True
+            return "done"
         _pulse(action)
     banner(f"gave up after {config.MAX_STEPS} steps (no {target!r})")
-    return False
+    return "done"
 
 
 # ---------- intent: retreat (move away from X) ----------
-def retreat(target: str) -> bool:
+def retreat(target: str) -> str:
     """Turn until the target is behind us (out of frame), then drive forward away.
     Front camera only -- we never reverse blind. Self-calibrating: rotates until
     the target leaves the view rather than trusting a fixed turn angle."""
     banner(f"RETREAT from {target!r}: turning away, then driving off")
     # phase 1: turn away until the target is no longer in view (cap ~270deg).
     for _ in range(3 * config.TURN_PULSES_90):
-        per = _look(target)
-        if not per.get("target_visible"):
+        if aborted():
+            return "preempted"
+        if not _look(target).get("target_visible"):
             break
         _pulse("turn_left")
     # phase 2: drive forward away. Use ONLY the obstacle check -- don't let the
     # safety 'too close to target' veto stop us (the whole point is to leave it).
     fwd_steps = int(os.environ.get("RETREAT_STEPS") or 6)
     for step in range(1, fwd_steps + 1):
+        if aborted():
+            return "preempted"
         per = _look(target)
         action = "turn_left" if per.get("obstacle_ahead") else "forward"
         _log(step, per, action)
         _pulse(action)
     rover.do_action("stop")
     banner(f"moved away from {target!r}")
-    return True
+    return "done"
 
 
 # ---------- intent: go_around (pass around X) ----------
-def go_around(target: str) -> bool:
+def go_around(target: str) -> str:
     """Best-effort: approach to mid range, then arc a semicircle past the target."""
     side = (os.environ.get("AROUND_SIDE") or "left").lower()
     turn_to = "turn_" + side
@@ -113,6 +156,8 @@ def go_around(target: str) -> bool:
     # phase 1: get within mid range of the target
     search_dir = "turn_" + config.SEARCH_DIR
     for step in range(1, config.MAX_STEPS + 1):
+        if aborted():
+            return "preempted"
         per = _look(target)
         visible, bearing, dist = (per.get("target_visible"),
                                   per.get("bearing"), per.get("distance"))
@@ -126,30 +171,29 @@ def go_around(target: str) -> bool:
         _log(step, per, action)
         _pulse(action)
     # phase 2: arc around -- turn out, drive past, turn back, drive past
-    for _ in range(config.TURN_PULSES_90):
-        _pulse(turn_to)
-    for _ in range(3):
-        _pulse(_safe(_look(target), "forward"))
-    for _ in range(config.TURN_PULSES_90):
-        _pulse(turn_back)
-    for _ in range(2):
-        _pulse(_safe(_look(target), "forward"))
+    for seq in ([turn_to] * config.TURN_PULSES_90 + ["forward"] * 3
+                + [turn_back] * config.TURN_PULSES_90 + ["forward"] * 2):
+        if aborted():
+            return "preempted"
+        _pulse(_safe(_look(target), seq) if seq == "forward" else seq)
     rover.do_action("stop")
     banner(f"went around {target!r}")
-    return True
+    return "done"
 
 
 # ---------- intent: turn (rotate, optionally to a landmark) ----------
-def turn(direction: str | None, target: str) -> bool:
+def turn(direction, target: str) -> str:
     if target:                                       # "turn left at the door"
         banner(f"TURN to face {target!r}")
         sdir = "turn_" + (direction or config.SEARCH_DIR)
         for step in range(1, config.MAX_STEPS + 1):
+            if aborted():
+                return "preempted"
             per = _look(target)
             if per.get("target_visible") and per.get("bearing") == "center":
                 rover.do_action("stop")
                 banner(f"facing {target!r}")
-                return True
+                return "done"
             if per.get("target_visible") and per.get("bearing") in ("left", "right"):
                 action = "turn_" + per["bearing"]
             else:
@@ -157,21 +201,25 @@ def turn(direction: str | None, target: str) -> bool:
             _log(step, per, action)
             _pulse(action)
         banner(f"could not center {target!r}")
-        return False
+        return "done"
     d = direction or "left"                           # bare "turn left"/"spin"
     banner(f"TURN {d} ~90")
     for _ in range(config.TURN_PULSES_90):
+        if aborted():
+            return "preempted"
         _pulse("turn_" + d)
     rover.do_action("stop")
-    return True
+    return "done"
 
 
 # ---------- intent: avoid (move while steering clear of X) ----------
-def avoid(target: str) -> bool:
+def avoid(target: str) -> str:
     """Drive forward; whenever the target appears close/ahead, steer away from it."""
     banner(f"AVOID {target!r} while moving")
     steps = int(os.environ.get("AVOID_STEPS") or 10)
     for step in range(1, steps + 1):
+        if aborted():
+            return "preempted"
         per = _look(target)
         visible, bearing, dist = (per.get("target_visible"),
                                   per.get("bearing"), per.get("distance"))
@@ -189,33 +237,33 @@ def avoid(target: str) -> bool:
         _pulse(action)
     rover.do_action("stop")
     banner(f"done avoiding {target!r}")
-    return True
+    return "done"
 
 
 # ---------- dispatcher ----------
-def run(cmd: dict):
-    """Dispatch a parsed command dict to the matching behavior. Always stops safe."""
+def run(cmd: dict) -> str:
+    """Dispatch a parsed command to the matching behavior. Returns 'done' or
+    'preempted' (a new command interrupted it). Always stops the wheels."""
     intent = cmd.get("intent", "unknown")
     target = cmd.get("target", "")
     direction = cmd.get("direction")
     try:
         if intent == "approach":
-            approach(target or "object")
-        elif intent == "retreat":
-            retreat(target or "object")
-        elif intent == "go_around":
-            go_around(target or "object")
-        elif intent == "turn":
-            turn(direction, target)
-        elif intent == "avoid":
-            avoid(target or "object")
-        elif intent == "stop":
+            return approach(target or "object")
+        if intent == "retreat":
+            return retreat(target or "object")
+        if intent == "go_around":
+            return go_around(target or "object")
+        if intent == "turn":
+            return turn(direction, target)
+        if intent == "avoid":
+            return avoid(target or "object")
+        if intent == "stop":
             rover.do_action("stop")
             banner("STOP")
-        else:
-            banner(f"unknown command: {cmd}")
-            rover.do_action("stop")
-    except KeyboardInterrupt:
-        print("\ninterrupted")
+            return "done"
+        banner(f"unknown command: {cmd}")
+        rover.do_action("stop")
+        return "done"
     finally:
         rover.send_cmd(config.cmd_stop())
