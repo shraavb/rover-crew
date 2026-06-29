@@ -23,6 +23,7 @@ def main():
     target = sys.argv[1] if len(sys.argv) > 1 else "red cup"
     banner(f"MISSION: find the {target!r}")
     body = {"sim": "Cyberwave UGV Beast (digital twin)",
+            "mjc": "MuJoCo simulation (onboard camera)",
             "mock": "laptop webcam (no motors)"}.get(rover.MODE, f"rover @ {config.ROVER_HOST}")
     print(f"brain : Cerebras · {config.MODEL} (multimodal)")
     print(f"agents: perception -> planner -> critic -> safety (4 Gemma-4 calls/loop)")

@@ -92,9 +92,9 @@ def perceive(jpg: bytes, target: str) -> dict:
         "- target_visible: true ONLY if you are confident the target is in frame.\n"
         "- bearing: which third of the frame the target is in (left/center/right), else none.\n"
         "- distance: near if it fills much of the frame, far if tiny, mid otherwise.\n"
-        "- obstacle_ahead: true ONLY if a large object/wall is close and directly blocking "
-        "forward motion within ~1 rover-length. A clear floor ahead is NOT an obstacle. "
-        "Default false when unsure.\n"
+        "- obstacle_ahead: true ONLY if a large object/wall (NOT the target) is close and "
+        "directly blocking forward motion within ~1 rover-length. The TARGET object itself "
+        "is NEVER an obstacle. A clear floor ahead is NOT an obstacle. Default false when unsure.\n"
         "Reply with ONLY a JSON object:\n"
         '{"target_visible": true/false, '
         '"bearing": "left"|"center"|"right"|"none", '
