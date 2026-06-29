@@ -93,7 +93,10 @@ def perceive(jpg: bytes, target: str) -> dict:
         "- bearing: center if the target is anywhere in the middle ~60% of the frame; "
         "left or right ONLY if it is clearly near that edge; none if not visible. "
         "(Prefer center when in doubt so the rover drives forward rather than wobbling.)\n"
-        "- distance: near if it fills much of the frame, far if tiny, mid otherwise.\n"
+        "- distance: be STRICT. near ONLY if the target is right in front of the rover "
+        "(within ~1 rover-length, fills roughly half or more of the frame height — close "
+        "enough to touch). far if it is small / across the room. mid otherwise. "
+        "When unsure between near and mid, say mid so the rover keeps approaching.\n"
         "- obstacle_ahead: true ONLY if a large object/wall (NOT the target) is close and "
         "directly blocking forward motion within ~1 rover-length. The TARGET object itself "
         "is NEVER an obstacle. A clear floor ahead is NOT an obstacle. Default false when unsure.\n"
@@ -145,7 +148,9 @@ def sense_plan(jpg: bytes, target: str) -> dict:
         "FIRST look and report ONLY what you clearly see (be conservative):\n"
         "- target_visible: true ONLY if confident the target is in frame.\n"
         "- bearing: which third of frame the target is in (left/center/right), else none.\n"
-        "- distance: near if it fills much of frame, far if tiny, mid otherwise.\n"
+        "- distance: be STRICT. near ONLY if within ~1 rover-length (fills roughly half "
+        "or more of the frame height, close enough to touch). far if small/across the room. "
+        "mid otherwise. When unsure between near and mid, say mid so the rover keeps approaching.\n"
         "- obstacle_ahead: true ONLY if a large object/wall is close and directly "
         "blocking forward motion within ~1 rover-length. Clear floor is NOT an "
         "obstacle. Default false when unsure.\n"
@@ -185,7 +190,9 @@ def critique(perception: dict, plan_out: dict, target: str) -> dict:
         f"Planner proposed: {json.dumps(plan_out)}\n"
         "Sanity-check the action against perception and the goal. If the target "
         "is NEAR, `done` is correct regardless of bearing (do not turn in place "
-        "next to it). Correct the planner if it erred (e.g. forward while far and "
+        "next to it). Do NOT output `stop` for an obstacle -- obstacle avoidance "
+        "is the SAFETY agent's job; keep driving toward the goal (forward/turn). "
+        "Correct the planner only on goal alignment (e.g. forward while far and "
         "off-center, or searching while the target is centered). Otherwise keep it.\n"
         'Reply ONLY JSON: {"action": "forward"|"turn_left"|"turn_right"|"stop"|"done", '
         '"reason": "<8-word reason>", "changed": true/false}'
@@ -197,10 +204,17 @@ def critique(perception: dict, plan_out: dict, target: str) -> dict:
 def safety_check(perception: dict, proposed_action: str) -> dict:
     """Final safety gate. A deterministic hard rule guarantees we never drive
     into a known obstacle; a Gemma safety reviewer handles nuanced cases."""
-    # Deterministic backstop — never overridden by the LLM.
-    if proposed_action == "forward" and perception.get("obstacle_ahead"):
-        return {"approved": False, "override": "turn_left", "reason": "obstacle ahead (hard rule)"}
-    # LLM safety reviewer.
+    # Deterministic obstacle handling (never overridden by the LLM):
+    #   forward into an obstacle -> steer (turn) instead;
+    #   a turn under an obstacle IS the avoidance -> always allow it.
+    if perception.get("obstacle_ahead"):
+        if proposed_action == "forward":
+            return {"approved": False, "override": "turn_left",
+                    "reason": "obstacle ahead -> steer around it"}
+        if proposed_action in ("turn_left", "turn_right"):
+            return {"approved": True, "override": None,
+                    "reason": "turning to clear the obstacle"}
+    # LLM safety reviewer (no obstacle, or stop/done).
     prompt = (
         "You are the SAFETY agent on a small ground rover.\n"
         f"Perception: {json.dumps(perception)}\n"

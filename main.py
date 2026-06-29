@@ -39,6 +39,11 @@ def main():
 
     period = 1.0 / config.LOOP_HZ
     max_steps = int(os.environ.get("MAX_STEPS") or 60)
+    # Search direction memory: once the target has been glimpsed on a side, keep
+    # searching toward that side instead of blindly spinning the planner's default
+    # way (which can sweep ~360deg the long way round). SEARCH_DIR sets the very
+    # first guess before the target is ever seen.
+    search_dir = "turn_" + (os.environ.get("SEARCH_DIR") or "right")
     step = 0
     try:
         while True:
@@ -62,6 +67,15 @@ def main():
             infer_ms = (time.time() - ti) * 1000
             if not safe["approved"]:
                 action = safe["override"]
+
+            # Remember which side the target was last seen on, and steer the
+            # search that way when it's out of frame (so we turn toward it, not
+            # away). Only applies while searching (target not visible + turning).
+            bearing = per.get("bearing")
+            if per.get("target_visible") and bearing in ("left", "right"):
+                search_dir = "turn_" + bearing
+            if not per.get("target_visible") and action in ("turn_left", "turn_right"):
+                action = search_dir
 
             dt = time.time() - t0
             print(
