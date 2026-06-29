@@ -55,25 +55,40 @@ _XML = """
       <camera name="onboard" pos="0.22 0 0.16" xyaxes="0 -1 0 0 0 1"/>
     </body>
 
-    <!-- TARGET: a TALL red cup so its top stays visible OVER the shorter crates
-         -- the rover always has its goal anchored even while avoiding obstacles. -->
+    <!-- TARGET: a TALL ORANGE cup so its top stays visible OVER the shorter
+         crates -- the rover keeps its goal anchored while avoiding obstacles. -->
     <body name="target" pos="4.8 1.2 0.5">
-      <geom type="cylinder" size="0.20 0.5" rgba="0.9 0.1 0.1 1"/>
+      <geom type="cylinder" size="0.20 0.5" rgba="1.0 0.5 0.05 1"/>
     </body>
 
     <!-- OBSTACLE on the route (shorter than the cup): when close ahead the SAFETY
          agent vetoes forward and steers around it; the cup stays visible above. -->
-    <geom name="crate_path" type="box" pos="2.5 0.6 0.20" size="0.30 0.30 0.20" material="crate"/>
+    <geom name="crate_path" type="box" pos="2.6 -0.15 0.20" size="0.30 0.30 0.20" material="crate"/>
     <!-- scenery crates to the sides (realism; not on the route) -->
     <geom name="crate_a" type="box" pos="3.8 -2.2 0.20" size="0.35 0.35 0.20" material="crate"/>
     <geom name="crate_b" type="box" pos="1.0 3.0 0.20" size="0.35 0.35 0.20" material="crate"/>
 
-    <!-- DISTRACTORS: same cup shape, different colours -> Gemma must discriminate -->
-    <body name="distractor_green" pos="3.2 -2.6 0.22">
+    <!-- DISTRACTOR CUPS: same shape, different colours (incl. red & yellow, the
+         confusable neighbours of orange) -> Gemma must pick ORANGE, not these. -->
+    <body name="cup_red" pos="3.4 -1.6 0.22">
+      <geom type="cylinder" size="0.16 0.22" rgba="0.85 0.08 0.08 1"/>
+    </body>
+    <body name="cup_yellow" pos="2.2 2.3 0.22">
+      <geom type="cylinder" size="0.16 0.22" rgba="0.9 0.85 0.1 1"/>
+    </body>
+    <body name="cup_green" pos="4.4 -2.6 0.22">
       <geom type="cylinder" size="0.16 0.22" rgba="0.15 0.75 0.2 1"/>
     </body>
-    <body name="distractor_blue" pos="1.4 -1.8 0.22">
+    <body name="cup_blue" pos="1.3 -1.8 0.22">
       <geom type="cylinder" size="0.16 0.22" rgba="0.15 0.3 0.9 1"/>
+    </body>
+    <body name="cup_purple" pos="5.6 -1.4 0.22">
+      <geom type="cylinder" size="0.16 0.22" rgba="0.55 0.15 0.8 1"/>
+    </body>
+
+    <!-- another object type (not a cup) for extra clutter -->
+    <body name="ball_white" pos="2.9 3.2 0.25">
+      <geom type="sphere" size="0.25" rgba="0.9 0.9 0.92 1"/>
     </body>
 
     <camera name="chase" mode="trackcom" pos="2.2 -6.5 5.2"/>
@@ -145,14 +160,18 @@ def do_action(action: str):
     step = config.SIM_STEP_M
     if action == "turn_left":
         _pose["heading"] += config.SIM_TURN_RAD
-        step *= 0.5            # turns also advance (arc), so the rover always
-    elif action == "turn_right":  # closes distance instead of spinning in place
+        step *= 0.35          # turns advance a little (arc) so the rover rounds
+    elif action == "turn_right":  # obstacles -- but not so much it wanders off
         _pose["heading"] -= config.SIM_TURN_RAD
-        step *= 0.5
+        step *= 0.35
     elif action != "forward":  # stop, done, back, unknown -> hold
         return
     _pose["x"] += step * math.cos(_pose["heading"])
     _pose["y"] += step * math.sin(_pose["heading"])
+    # Keep the rover within the populated area so a long search arc can't spiral
+    # it off into empty floor where it loses every cup.
+    _pose["x"] = min(6.0, max(-0.6, _pose["x"]))
+    _pose["y"] = min(4.0, max(-4.0, _pose["y"]))
     _apply()
 
 
