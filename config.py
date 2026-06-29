@@ -51,7 +51,9 @@ SIM_FRAME = (os.environ.get("SIM_FRAME") or "cloud").lower()
 # which is why a naive fixed sleep "works" at 1200ms but stalls at 600ms.
 # The limiter (ratelimit.py) throttles to MAX_RPM and backs off on 429 so the
 # loop degrades smoothly instead of erroring. Keep margin under the hard 100.
-MAX_RPM = 90.0
+MAX_RPM = float(os.environ.get("MAX_RPM") or 90.0)  # raise for the hackathon
+                                                    # rate increase to show full
+                                                    # Cerebras speed; 429s back off
 
 # ---- Control loop ----
 LOOP_HZ = 3.0                 # target perceive->act cycles per second

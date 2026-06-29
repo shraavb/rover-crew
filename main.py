@@ -44,18 +44,21 @@ def main():
 
             jpg = rover.get_frame()
 
-            # Multi-agent crew, each an independent Gemma-4 call on Cerebras:
+            # Multi-agent crew, each an independent Gemma-4 call on Cerebras.
+            # Time the inference to show Cerebras speed (4 calls back to back).
+            ti = time.time()
             per = agents.perceive(jpg, target)        # 1. multimodal perception
             pl = agents.plan(per, target)             # 2. planner
             crit = agents.critique(per, pl, target)   # 3. critic (goal alignment)
             action = crit["action"]
             safe = agents.safety_check(per, action)   # 4. safety veto
+            infer_ms = (time.time() - ti) * 1000
             if not safe["approved"]:
                 action = safe["override"]
 
             dt = time.time() - t0
             print(
-                f"[{step:03d}] {dt*1000:4.0f}ms | "
+                f"[{step:03d}] {infer_ms:4.0f}ms/4-agents | "
                 f"see={per.get('target_visible')} bearing={per.get('bearing')} "
                 f"dist={per.get('distance')} obs={per.get('obstacle_ahead')} "
                 f"| plan={pl.get('action')} | critic={crit.get('action')}"
