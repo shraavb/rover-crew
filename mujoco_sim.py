@@ -9,6 +9,7 @@ shows the robot moving for the demo recording.
     USE_MJC=1 ./.venv/bin/python main.py "red box"
 """
 import math
+import time
 
 import cv2
 import mujoco
@@ -64,7 +65,12 @@ _XML = """
 
     <!-- OBSTACLE on the route (shorter than the cup): when close ahead the SAFETY
          agent vetoes forward and steers around it; the cup stays visible above. -->
-    <geom name="crate_path" type="box" pos="2.6 -0.15 0.20" size="0.30 0.30 0.20" material="crate"/>
+    <!-- BASKET: a tall laundry hamper (blue body, orange band) the rover goes
+         around -- mirrors the real room (basketball hamper in front of the case). -->
+    <body name="basket" pos="2.3 -1.0 0.40">
+      <geom type="box" size="0.26 0.26 0.40" rgba="0.12 0.18 0.55 1"/>
+      <geom type="box" size="0.27 0.27 0.10" pos="0 0 0.12" rgba="0.9 0.45 0.1 1"/>
+    </body>
     <!-- scenery crates to the sides (realism; not on the route) -->
     <geom name="crate_a" type="box" pos="3.8 -2.2 0.20" size="0.35 0.35 0.20" material="crate"/>
     <geom name="crate_b" type="box" pos="1.0 3.0 0.20" size="0.35 0.35 0.20" material="crate"/>
@@ -101,6 +107,12 @@ import atexit
 import os
 
 _SHOW = os.environ.get("MJC_WINDOW", "1") == "1"  # MJC_WINDOW=0 for headless
+# Smooth each discrete move into a glide so the viewer can take in the scene
+# (multiple coloured cups) instead of the rover teleporting per step. Only when
+# the window is shown; headless runs jump straight to the final pose (fast tests).
+_ANIM_FRAMES = int(os.environ.get("SIM_ANIM_FRAMES") or 8)
+_ANIM_DT = float(os.environ.get("SIM_ANIM_DT") or 0.035)  # seconds per tween frame
+# glide per move ~= FRAMES*DT (~0.28s). Lower SIM_ANIM_DT / FRAMES for faster.
 
 
 @atexit.register
@@ -180,23 +192,40 @@ def get_frame() -> bytes:
 def do_action(action: str):
     if _model is None:
         _init()
+    x0, y0, h0 = _pose["x"], _pose["y"], _pose["heading"]
     step = config.SIM_STEP_M
+    h1 = h0
     if action == "turn_left":
-        _pose["heading"] += config.SIM_TURN_RAD
+        h1 = h0 + config.SIM_TURN_RAD
         step *= 0.35          # turns advance a little (arc) so the rover rounds
     elif action == "turn_right":  # obstacles -- but not so much it wanders off
-        _pose["heading"] -= config.SIM_TURN_RAD
+        h1 = h0 - config.SIM_TURN_RAD
         step *= 0.35
+    elif action == "veer_left":   # gentle arc + FULL forward step: center on the
+        h1 = h0 + config.SIM_TURN_RAD * 0.45   # target WHILE closing distance
+    elif action == "veer_right":
+        h1 = h0 - config.SIM_TURN_RAD * 0.45
     elif action != "forward":  # stop, done, back, unknown -> hold
         return
-    _pose["x"] += step * math.cos(_pose["heading"])
-    _pose["y"] += step * math.sin(_pose["heading"])
+    x1 = x0 + step * math.cos(h1)
+    y1 = y0 + step * math.sin(h1)
     # Keep the rover on the floor area. Bounds are wide enough for retreat /
     # go_around / avoid to drive well clear of the start, but not off the world.
-    _pose["x"] = min(7.5, max(-4.5, _pose["x"]))
-    _pose["y"] = min(5.5, max(-5.5, _pose["y"]))
-    _apply()
-    _show()  # animate the window even for deterministic (no-perception) motions
+    x1 = min(7.5, max(-4.5, x1))
+    y1 = min(5.5, max(-5.5, y1))
+
+    if _SHOW and _ANIM_FRAMES > 1:
+        # Glide from old pose to new so the move is watchable on camera.
+        for i in range(1, _ANIM_FRAMES + 1):
+            a = i / _ANIM_FRAMES
+            _pose["x"], _pose["y"] = x0 + (x1 - x0) * a, y0 + (y1 - y0) * a
+            _pose["heading"] = h0 + (h1 - h0) * a
+            _apply()
+            _show()
+            time.sleep(_ANIM_DT)
+    else:
+        _pose["x"], _pose["y"], _pose["heading"] = x1, y1, h1
+        _apply()
 
 
 def send_cmd(cmd: dict):
