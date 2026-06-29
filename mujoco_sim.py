@@ -21,15 +21,33 @@ import config
 _XML = """
 <mujoco>
   <option gravity="0 0 0"/>
-  <visual><global offwidth="640" offheight="480"/></visual>
+  <visual>
+    <global offwidth="640" offheight="480"/>
+    <headlight ambient="0.45 0.45 0.45" diffuse="0.5 0.5 0.5" specular="0.1 0.1 0.1"/>
+    <quality shadowsize="4096"/>
+    <map fogstart="8" fogend="18" haze="0.15"/>
+  </visual>
   <asset>
-    <texture name="grid" type="2d" builtin="checker" rgb1="0.3 0.35 0.3"
-             rgb2="0.25 0.3 0.25" width="512" height="512"/>
-    <material name="grid" texture="grid" texrepeat="12 12" reflectance="0.1"/>
+    <texture name="sky" type="skybox" builtin="gradient" rgb1="0.5 0.6 0.75"
+             rgb2="0.85 0.88 0.92" width="256" height="256"/>
+    <texture name="grid" type="2d" builtin="checker" rgb1="0.32 0.34 0.36"
+             rgb2="0.26 0.28 0.30" width="512" height="512"/>
+    <material name="grid" texture="grid" texrepeat="16 16" reflectance="0.15"/>
+    <texture name="wood" type="cube" builtin="flat" rgb1="0.52 0.36 0.20"
+             width="64" height="64"/>
+    <material name="crate" texture="wood" specular="0.2" shininess="0.3"/>
+    <material name="wall" rgba="0.6 0.62 0.66 1" specular="0.1"/>
   </asset>
   <worldbody>
-    <light pos="1 -1 5" dir="0 0 -1" diffuse="1 1 1"/>
-    <geom name="floor" type="plane" size="14 14 0.1" material="grid"/>
+    <light directional="true" pos="2 -2 6" dir="-0.3 0.3 -1" castshadow="true"
+           diffuse="0.7 0.7 0.7" specular="0.2 0.2 0.2"/>
+    <geom name="floor" type="plane" size="18 18 0.1" material="grid"/>
+
+    <!-- distant perimeter walls: backdrop realism, far enough never to block -->
+    <geom type="box" pos="9 1 0.6" size="0.15 9 0.6" material="wall"/>
+    <geom type="box" pos="1 8 0.6" size="9 0.15 0.6" material="wall"/>
+    <geom type="box" pos="1 -7 0.6" size="9 0.15 0.6" material="wall"/>
+
     <body name="rover" pos="0 0 0.12">
       <freejoint/>
       <geom type="box" size="0.22 0.16 0.10" rgba="0.2 0.45 0.95 1"/>
@@ -37,23 +55,28 @@ _XML = """
       <camera name="onboard" pos="0.22 0 0.16" xyaxes="0 -1 0 0 0 1"/>
     </body>
 
-    <!-- TARGET: red cup, off to the left so the rover must search to find it -->
-    <body name="target" pos="3.0 1.5 0.25">
-      <geom type="cylinder" size="0.20 0.25" rgba="0.9 0.1 0.1 1"/>
+    <!-- TARGET: a TALL red cup so its top stays visible OVER the shorter crates
+         -- the rover always has its goal anchored even while avoiding obstacles. -->
+    <body name="target" pos="4.8 1.2 0.5">
+      <geom type="cylinder" size="0.20 0.5" rgba="0.9 0.1 0.1 1"/>
     </body>
 
-    <!-- DISTRACTORS: same shape, different colours -> Gemma must discriminate -->
-    <body name="distractor_green" pos="2.6 0.0 0.22">
+    <!-- OBSTACLE on the route (shorter than the cup): when close ahead the SAFETY
+         agent vetoes forward and steers around it; the cup stays visible above. -->
+    <geom name="crate_path" type="box" pos="2.5 0.6 0.20" size="0.30 0.30 0.20" material="crate"/>
+    <!-- scenery crates to the sides (realism; not on the route) -->
+    <geom name="crate_a" type="box" pos="3.8 -2.2 0.20" size="0.35 0.35 0.20" material="crate"/>
+    <geom name="crate_b" type="box" pos="1.0 3.0 0.20" size="0.35 0.35 0.20" material="crate"/>
+
+    <!-- DISTRACTORS: same cup shape, different colours -> Gemma must discriminate -->
+    <body name="distractor_green" pos="3.2 -2.6 0.22">
       <geom type="cylinder" size="0.16 0.22" rgba="0.15 0.75 0.2 1"/>
     </body>
-    <body name="distractor_blue" pos="3.2 -2.4 0.22">
+    <body name="distractor_blue" pos="1.4 -1.8 0.22">
       <geom type="cylinder" size="0.16 0.22" rgba="0.15 0.3 0.9 1"/>
     </body>
-    <body name="distractor_yellow" pos="1.4 1.7 0.22">
-      <geom type="cylinder" size="0.16 0.22" rgba="0.9 0.8 0.1 1"/>
-    </body>
 
-    <camera name="chase" mode="trackcom" pos="2.0 -5.5 4.5"/>
+    <camera name="chase" mode="trackcom" pos="2.2 -6.5 5.2"/>
   </worldbody>
 </mujoco>
 """

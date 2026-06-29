@@ -204,13 +204,20 @@ def critique(perception: dict, plan_out: dict, target: str) -> dict:
 def safety_check(perception: dict, proposed_action: str) -> dict:
     """Final safety gate. A deterministic hard rule guarantees we never drive
     into a known obstacle; a Gemma safety reviewer handles nuanced cases."""
+    # Arriving is always safe -- never let the safety reviewer block `done`
+    # (the planner+critic already decided the target is reached).
+    if proposed_action == "done":
+        return {"approved": True, "override": None, "reason": "arrived at target"}
     # Deterministic obstacle handling (never overridden by the LLM):
     #   forward into an obstacle -> steer (turn) instead;
     #   a turn under an obstacle IS the avoidance -> always allow it.
     if perception.get("obstacle_ahead"):
         if proposed_action == "forward":
-            return {"approved": False, "override": "turn_left",
-                    "reason": "obstacle ahead -> steer around it"}
+            # Steer around the obstacle toward the side the target is on, so we
+            # go around toward the goal instead of blindly away from it.
+            turn = "turn_right" if perception.get("bearing") == "right" else "turn_left"
+            return {"approved": False, "override": turn,
+                    "reason": f"obstacle ahead -> steer {turn.split('_')[1]}"}
         if proposed_action in ("turn_left", "turn_right"):
             return {"approved": True, "override": None,
                     "reason": "turning to clear the obstacle"}

@@ -44,6 +44,12 @@ def main():
     # way (which can sweep ~360deg the long way round). SEARCH_DIR sets the very
     # first guess before the target is ever seen.
     search_dir = "turn_" + (os.environ.get("SEARCH_DIR") or "right")
+    # Min-approach: Gemma's distance sense is unreliable and over-reports 'near',
+    # which makes the rover declare 'done' from across the room without moving.
+    # Force at least this many forward approach steps while the target is visible
+    # and centered before 'done' is honoured, so it physically closes the gap.
+    min_approach = int(os.environ.get("MIN_APPROACH") or 3)
+    approached = 0
     step = 0
     try:
         while True:
@@ -76,6 +82,20 @@ def main():
                 search_dir = "turn_" + bearing
             if not per.get("target_visible") and action in ("turn_left", "turn_right"):
                 action = search_dir
+
+            # Face the target before finishing: 'done' fires on 'near' regardless
+            # of bearing, so an off-center target would otherwise never trigger a
+            # turn (and could deadlock against a safety stop). Turn toward it first.
+            if action == "done" and per.get("target_visible") and bearing in ("left", "right"):
+                action = "turn_" + bearing
+            # Force a real approach: don't accept 'done' until we've driven a few
+            # forward steps toward a centered target (overrides premature 'near').
+            if (action == "done" and per.get("target_visible")
+                    and bearing in ("center", None) and approached < min_approach
+                    and not per.get("obstacle_ahead")):
+                action = "forward"
+            if action == "forward":
+                approached += 1
 
             dt = time.time() - t0
             print(
