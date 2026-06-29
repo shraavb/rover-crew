@@ -179,45 +179,51 @@ def _record_window(seconds: float) -> np.ndarray:
 
 
 def listen_loop(on_command, stop_event, window: float = None):
-    """Always-on listener: transcribe rolling windows, and when a window starts
-    with the wake word 'Roro', parse the rest as a command and hand it to
-    on_command(cmd). Runs until stop_event is set. Meant to run in a thread."""
-    if window is None:
-        window = LISTEN_WINDOW
+    """Always-on listener with pause-based end-of-utterance (so long/compound
+    commands aren't truncated by a fixed window). Records short chunks, starts
+    buffering when it hears speech, and finalizes the utterance after a short
+    silence -- then transcribes the whole thing, checks for the wake word, parses
+    it, and hands the steps to on_command. Runs until stop_event is set."""
     _get_model()  # warm the model before announcing readiness
     wake = WAKE_WORDS[0]
-    print(f"[voice] 👂 always-on ({window:.0f}s windows): say '{wake} <command>' anytime")
-    awaiting = False  # heard the wake word, waiting for the command in next window
+    chunk = 0.4                                            # seconds per read
+    thresh = float(os.environ.get("VAD_THRESH") or 0.012)  # speech RMS threshold
+    end_silence = float(os.environ.get("VAD_SILENCE") or 0.9)  # pause that ends it
+    max_utt = float(os.environ.get("VAD_MAX") or 12.0)    # hard cap per utterance
+    debug = os.environ.get("DEBUG_VOICE") == "1"
+    print(f"[voice] 👂 always-on (speak naturally): say '{wake} <command>'")
+
+    buf, speaking, silence, dur = [], False, 0.0, 0.0
     while not stop_event.is_set():
-        audio = _record_window(window)
+        a = _record_window(chunk)
         if stop_event.is_set():
             break
-        text = transcribe(audio)
-        if not text:
-            continue
-        low = text.lower()
-        hit = any(w in low for w in WAKE_WORDS)
-        if os.environ.get("DEBUG_VOICE") == "1":
-            print(f"[voice:debug] {text!r} {'(WAKE)' if hit else ''}")
-        if awaiting and not hit:
-            # previous window was wake-only; this window IS the command.
-            awaiting = False
+        rms = float(np.sqrt((a ** 2).mean())) if a.size else 0.0
+        if rms >= thresh:                                 # speech
+            buf.append(a)
+            speaking, silence, dur = True, 0.0, dur + chunk
+        elif speaking:                                    # trailing silence
+            buf.append(a)
+            silence += chunk
+            dur += chunk
+        if speaking and (silence >= end_silence or dur >= max_utt):
+            audio = np.concatenate(buf)
+            buf, speaking, silence, dur = [], False, 0.0, 0.0
+            text = transcribe(audio)
+            if not text:
+                continue
+            hit = any(w in text.lower() for w in WAKE_WORDS)
+            if debug:
+                print(f"[voice:debug] {text!r} {'(WAKE)' if hit else ''}")
+            if not hit:
+                continue
+            cmd_text = _strip_wake(text)
+            if not cmd_text:                              # wake word only
+                continue
             print(f"[voice] heard: {text!r}")
-            steps = parse_command(text)
+            steps = parse_command(cmd_text)
             print(f"[voice] steps: {steps}")
             on_command(steps)
-            continue
-        if not hit:
-            continue
-        cmd_text = _strip_wake(text)
-        if not cmd_text:
-            awaiting = True            # wake word alone -> command comes next
-            continue
-        awaiting = False
-        print(f"[voice] heard: {text!r}")
-        steps = parse_command(cmd_text)
-        print(f"[voice] steps: {steps}")
-        on_command(steps)
 
 
 def get_command_by_voice() -> list[dict]:
