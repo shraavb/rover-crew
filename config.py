@@ -80,6 +80,10 @@ SEARCH_DIR = (os.environ.get("SEARCH_DIR") or "right").lower()
 # Turn calibration: how many stop-look-move turn pulses make ~a quarter turn.
 # Tune on hardware (a pulse = TURN_SPEED for MOVE_TIME). 180deg = 2x this.
 TURN_PULSES_90 = int(os.environ.get("TURN_PULSES_90") or 3)
+# Final close-in: Gemma calls 'near' ~20cm out; drive this many extra short
+# forward pulses once near+centered to finish ~5-10cm from the target. Tune up
+# for closer, down (0) to stop as soon as 'near'.
+CLOSE_STEPS = int(os.environ.get("CLOSE_STEPS") or 2)
 
 # ---- Waveshare UGV serial command map (VERIFY against your model's JSON cmd set) ----
 # Waveshare UGV uses JSON over serial to the ESP32 sub-controller.
@@ -99,6 +103,16 @@ def cmd_turn_left() -> dict:
 def cmd_turn_right() -> dict:
     return cmd_drive(TURN_SPEED, -TURN_SPEED)
 
+# Veer = drive forward while curving toward one side (inner wheel slowed). Used to
+# center an off-center target while still advancing, instead of spinning in place
+# (which overshoots and makes the rover orbit the target).
+VEER_INNER = 0.45                  # inner-wheel fraction of FWD_SPEED
+def cmd_veer_left() -> dict:
+    return cmd_drive(FWD_SPEED * VEER_INNER, FWD_SPEED)
+
+def cmd_veer_right() -> dict:
+    return cmd_drive(FWD_SPEED, FWD_SPEED * VEER_INNER)
+
 def cmd_stop() -> dict:
     return cmd_drive(0.0, 0.0)
 
@@ -106,6 +120,8 @@ ACTION_TO_CMD = {
     "forward": cmd_forward,
     "turn_left": cmd_turn_left,
     "turn_right": cmd_turn_right,
+    "veer_left": cmd_veer_left,
+    "veer_right": cmd_veer_right,
     "back": cmd_back,
     "stop": cmd_stop,
     "done": cmd_stop,

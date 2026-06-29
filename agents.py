@@ -212,7 +212,7 @@ def safety_check(perception: dict, proposed_action: str) -> dict:
     #   forward into an obstacle -> steer (turn) instead;
     #   a turn under an obstacle IS the avoidance -> always allow it.
     if perception.get("obstacle_ahead"):
-        if proposed_action == "forward":
+        if proposed_action in ("forward", "veer_left", "veer_right"):
             # Steer around the obstacle toward the side the target is on, so we
             # go around toward the goal instead of blindly away from it.
             turn = "turn_right" if perception.get("bearing") == "right" else "turn_left"

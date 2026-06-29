@@ -101,19 +101,27 @@ def approach(target: str) -> str:
             search_dir = "turn_" + bearing           # remember which side it's on
         if not visible:
             action = search_dir                      # search toward last-seen side
+        elif dist == "near" and bearing in ("left", "right"):
+            action = "turn_" + bearing               # face it for the final approach
         elif dist == "near":
-            action = "done"                          # arrived (trust near here)
-        elif bearing in ("left", "right"):
-            action = "turn_" + bearing               # face it
-        else:
-            action = "forward"                       # centered + far/mid -> close in
-        if action != "done":
-            action = _safe(per, action)
-        _log(step, per, action)
-        if action == "done":
+            # centered + near: nudge in close, then finish (~5-10cm vs ~20cm).
+            for _ in range(config.CLOSE_STEPS):
+                if aborted():
+                    return "preempted"
+                _pulse("forward")
             rover.do_action("stop")
             banner(f"REACHED {target!r} in {step} steps 🎯")
             return "done"
+        elif bearing in ("left", "right"):
+            action = "veer_" + bearing               # advance WHILE centering (no orbit)
+        else:
+            action = "forward"                       # centered + far/mid -> close in
+        # Safety only gates collision-capable motion (forward/veer). In-place
+        # turns and search can't drive into anything, and routing them through the
+        # LLM veto froze the rover with "stop" while centering next to the target.
+        if action in ("forward", "veer_left", "veer_right"):
+            action = _safe(per, action)
+        _log(step, per, action)
         _pulse(action)
     banner(f"gave up after {config.MAX_STEPS} steps (no {target!r})")
     return "done"
