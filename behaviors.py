@@ -156,6 +156,7 @@ def go_around(target: str) -> str:
     banner(f"GO AROUND {target!r} (via {side})")
     # phase 1: get within mid range of the target
     search_dir = "turn_" + config.SEARCH_DIR
+    found = False
     for step in range(1, config.MAX_STEPS + 1):
         if aborted():
             return "preempted"
@@ -165,12 +166,18 @@ def go_around(target: str) -> str:
         if visible and bearing in ("left", "right"):
             search_dir = "turn_" + bearing
         if visible and dist in ("mid", "near"):
+            found = True
             break
         action = search_dir if not visible else (
             "turn_" + bearing if bearing in ("left", "right") else "forward")
         action = _safe(per, action)
         _log(step, per, action)
         _pulse(action)
+    if not found:
+        # never located the target -- don't fake an arc around empty space.
+        rover.do_action("stop")
+        banner(f"could not find {target!r} to go around")
+        return "done"
     # phase 2: arc around -- turn out, drive past, turn back, drive past
     for seq in ([turn_to] * config.TURN_PULSES_90 + ["forward"] * 3
                 + [turn_back] * config.TURN_PULSES_90 + ["forward"] * 2):
