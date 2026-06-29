@@ -15,7 +15,7 @@ except ImportError:
 
 # ---- Networking ----
 # IP of the rover's Raspberry Pi on your WiFi (run `hostname -I` on the Pi).
-ROVER_HOST = "192.168.1.50"   # <-- CHANGE ME
+ROVER_HOST = "10.0.0.194"   # Waveshare UGV Beast Pi (ugvrpi.local) on home wifi
 ROVER_PORT = 5000
 
 # ---- Model ----
@@ -35,7 +35,8 @@ CW_TWIN = "waveshare/ugv-beast"
 # no '/', so the SDK won't resolve it). Env var wins.
 CW_ENV = os.environ.get("CYBERWAVE_ENVIRONMENT_ID") or "shraavasti-bhats-workspace/ugv-rover"
 SIM_STEP_M = 0.3      # metres per forward step   (SDK caps at 1.0)
-SIM_TURN_RAD = 0.5    # radians per turn step     (SDK caps at pi)
+SIM_TURN_RAD = 0.35   # radians per turn step (small enough to avoid overshoot
+                      # oscillation when centering on an off-axis target)
 # SIM_MOCK_FRAME=1 -> use the SDK's deterministic placeholder frame instead of a
 # real render. Validates the loop plumbing when the sim isn't rendering yet.
 SIM_MOCK_FRAME = os.environ.get("SIM_MOCK_FRAME") == "1"
@@ -63,6 +64,22 @@ LOOP_HZ = 3.0                 # target perceive->act cycles per second
 MOVE_PULSE_SEC = 0.6          # how long each motion command runs before re-looking
 TURN_SPEED = 0.25             # wheel speed for turning (m/s-ish, tune)
 FWD_SPEED = 0.25              # wheel speed forward
+
+# ---- Stop-look-move timing (shared by every behavior in behaviors.py) ----
+# Each step pulses one motion for MOVE_TIME, stops, then waits SETTLE_TIME so the
+# camera frame used for the NEXT decision is sharp (continuous driving blurred
+# every frame and perception went blind). Env-overridable.
+MOVE_TIME = float(os.environ.get("MOVE_TIME") or 0.35)
+SETTLE_TIME = float(os.environ.get("SETTLE_TIME") or 0.35)
+MAX_STEPS = int(os.environ.get("MAX_STEPS") or 60)
+# Forward approach steps forced while the target is mid/far before 'done' is
+# honoured (Gemma over-reports 'near', else the rover stops across the room).
+MIN_APPROACH = int(os.environ.get("MIN_APPROACH") or 3)
+# First search-turn direction before the target has ever been seen.
+SEARCH_DIR = (os.environ.get("SEARCH_DIR") or "right").lower()
+# Turn calibration: how many stop-look-move turn pulses make ~a quarter turn.
+# Tune on hardware (a pulse = TURN_SPEED for MOVE_TIME). 180deg = 2x this.
+TURN_PULSES_90 = int(os.environ.get("TURN_PULSES_90") or 3)
 
 # ---- Waveshare UGV serial command map (VERIFY against your model's JSON cmd set) ----
 # Waveshare UGV uses JSON over serial to the ESP32 sub-controller.

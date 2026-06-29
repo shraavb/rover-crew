@@ -1,83 +1,73 @@
-"""The control loop: frame -> perception -> planner -> safety -> motor command.
-Runs the agent crew at ~LOOP_HZ. Cerebras speed = real-time embodied agents.
+"""Roro's entry point: always-on voice control with mid-motion preemption.
 
-    # dev, no robot (laptop webcam, prints motor cmds):
-    USE_MOCK=1 ./.venv/bin/python main.py "red cup"
+    # always-on wake word -- say "Roro <command>" anytime, even while moving:
+    ./.venv/bin/python main.py voice
+    ./.venv/bin/python main.py "orange case"     # start a command, still listening
 
-    # real rover (set ROVER_HOST in config.py, pi_server.py running on the Pi):
-    ./.venv/bin/python main.py "red cup"
+    # dev without a robot: USE_MOCK=1 (laptop webcam) / USE_SIM=1 / USE_MJC=1
+
+A background thread listens for "Roro ..." continuously; Gemma parses each
+command into {intent, target, direction}; behaviors.py runs the matching policy.
+A new command preempts the current behavior at the next step boundary (~1s).
+Ctrl-C to quit.
 """
 import sys
+import threading
 import time
 
 import agents
 import config
+import behaviors
 import rover_client as rover
+import voice
 
 
-def banner(s):
-    print("\n" + "=" * 60 + f"\n{s}\n" + "=" * 60)
+def supervise(initial_cmd):
+    """Run behaviors back-to-back, swapping to whatever the listener queues next.
+    initial_cmd runs first (None -> idle until the first 'Roro ...')."""
+    stop_event = threading.Event()
+    listener = threading.Thread(
+        target=voice.listen_loop, args=(behaviors.set_pending, stop_event),
+        daemon=True)
+    listener.start()
+
+    current = initial_cmd
+    try:
+        while True:
+            if current is None:                      # idle: wait for a command
+                while not behaviors.has_pending():
+                    time.sleep(0.2)
+                current = behaviors.take_pending()
+            behaviors.run(current)                   # 'done' or 'preempted'
+            # Pick up a queued command if any (preemption or arrived-during-run);
+            # otherwise go idle and wait for the next "Roro ...".
+            current = behaviors.take_pending()
+    except KeyboardInterrupt:
+        print("\nshutting down")
+    finally:
+        stop_event.set()
+        rover.send_cmd(config.cmd_stop())
 
 
 def main():
-    target = sys.argv[1] if len(sys.argv) > 1 else "red cup"
-    banner(f"MISSION: find the {target!r}")
+    arg = " ".join(sys.argv[1:]).strip() or "voice"
+
     body = {"sim": "Cyberwave UGV Beast (digital twin)",
+            "mjc": "MuJoCo simulation (onboard camera)",
             "mock": "laptop webcam (no motors)"}.get(rover.MODE, f"rover @ {config.ROVER_HOST}")
     print(f"brain : Cerebras · {config.MODEL} (multimodal)")
-    print(f"agents: perception -> planner -> critic -> safety (4 Gemma-4 calls/loop)")
     print(f"body  : {body}")
 
     print("warming up model...")
-    agents._create(
-        model=config.MODEL,
-        messages=[{"role": "user", "content": "ready?"}],
-        max_tokens=5,
-    )
+    agents._create(model=config.MODEL,
+                   messages=[{"role": "user", "content": "ready?"}], max_tokens=5)
 
-    period = 1.0 / config.LOOP_HZ
-    step = 0
-    try:
-        while True:
-            step += 1
-            t0 = time.time()
-
-            jpg = rover.get_frame()
-
-            # Multi-agent crew, each an independent Gemma-4 call on Cerebras.
-            # Time the inference to show Cerebras speed (4 calls back to back).
-            ti = time.time()
-            per = agents.perceive(jpg, target)        # 1. multimodal perception
-            pl = agents.plan(per, target)             # 2. planner
-            crit = agents.critique(per, pl, target)   # 3. critic (goal alignment)
-            action = crit["action"]
-            safe = agents.safety_check(per, action)   # 4. safety veto
-            infer_ms = (time.time() - ti) * 1000
-            if not safe["approved"]:
-                action = safe["override"]
-
-            dt = time.time() - t0
-            print(
-                f"[{step:03d}] {infer_ms:4.0f}ms/4-agents | "
-                f"see={per.get('target_visible')} bearing={per.get('bearing')} "
-                f"dist={per.get('distance')} obs={per.get('obstacle_ahead')} "
-                f"| plan={pl.get('action')} | critic={crit.get('action')}"
-                f"{'*' if crit.get('changed') else ''} ({crit.get('reason','')}) "
-                f"| safety={safe.get('reason')} -> DO {action}"
-            )
-
-            if action == "done":
-                rover.do_action("stop")
-                banner(f"REACHED {target!r} in {step} steps 🎯")
-                break
-
-            rover.do_action(action)
-
-            time.sleep(max(0, period - (time.time() - t0)))
-    except KeyboardInterrupt:
-        print("\ninterrupted")
-    finally:
-        rover.send_cmd(config.cmd_stop())
+    # `voice` -> pure always-on (idle until first wake word). Any other text is an
+    # initial command; the always-on listener still runs so you can interrupt it.
+    initial = None if arg == "voice" else voice.parse_command(arg)
+    if initial:
+        behaviors.banner(f"COMMAND: {initial}")
+    supervise(initial)
 
 
 if __name__ == "__main__":

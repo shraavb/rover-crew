@@ -17,7 +17,8 @@ import config
 
 USE_MOCK = os.environ.get("USE_MOCK") == "1"
 USE_SIM = os.environ.get("USE_SIM") == "1"
-MODE = "sim" if USE_SIM else "mock" if USE_MOCK else "real"
+USE_MJC = os.environ.get("USE_MJC") == "1"  # self-contained MuJoCo sim
+MODE = ("mjc" if USE_MJC else "sim" if USE_SIM else "mock" if USE_MOCK else "real")
 
 _base = f"http://{config.ROVER_HOST}:{config.ROVER_PORT}"
 
@@ -119,21 +120,32 @@ def _sim_do_action(action: str):
     _sim_apply()
 
 
+# mjc backend lives in its own module (lazy import: only load MuJoCo when used).
+if MODE == "mjc":
+    import mujoco_sim
+
 # ---------- public ----------
 _GET_FRAME = {"sim": _sim_get_frame, "mock": _mock_get_frame, "real": _real_get_frame}
 _SEND_CMD = {"sim": _sim_send_cmd, "mock": _mock_send_cmd, "real": _real_send_cmd}
 
+if MODE == "mjc":
+    get_frame = mujoco_sim.get_frame
+    send_cmd = mujoco_sim.send_cmd
 # Hybrid: the Cyberwave sim has no synthetic camera, so SIM_FRAME=webcam takes
 # perception from the laptop webcam while motion still drives the twin.
-if MODE == "sim" and config.SIM_FRAME == "webcam":
+elif MODE == "sim" and config.SIM_FRAME == "webcam":
     get_frame = _mock_get_frame
+    send_cmd = _SEND_CMD[MODE]
 else:
     get_frame = _GET_FRAME[MODE]
-send_cmd = _SEND_CMD[MODE]
+    send_cmd = _SEND_CMD[MODE]
 
 
 def do_action(action: str):
     """Map a high-level action -> motor command, run it for MOVE_PULSE_SEC, then stop."""
+    if MODE == "mjc":
+        mujoco_sim.do_action(action)
+        return
     if MODE == "sim":
         # Twin motion is a discrete displacement (metres/radians), no pulse needed.
         _sim_do_action(action)
