@@ -7,6 +7,7 @@
     USE_MOCK=1 ./.venv/bin/python main.py "red cup"   # no robot needed
     USE_SIM=1  ./.venv/bin/python main.py "red cup"   # Cyberwave digital twin
 """
+import math
 import os
 import time
 
@@ -85,22 +86,37 @@ def _sim_get_frame() -> bytes:
     return jpg
 
 
+# The UGV Beast has no physics sim (browser Playground doesn't integrate the
+# base; MuJoCo doesn't support it), so move_forward/turn_left never render. We
+# instead dead-reckon the agent's discrete actions into a pose and author the
+# twin transform directly via edit_position/edit_rotation, which IS visible in
+# the viewport and reflected in get_pose. Pose: metres (x,y), radians (heading).
+_pose = {"x": 0.0, "y": 0.0, "heading": 0.0}
+
+
+def _sim_apply():
+    twin = _sim_twin()
+    twin.edit_position(x=_pose["x"], y=_pose["y"])
+    twin.edit_rotation(yaw=math.degrees(_pose["heading"]))  # edit_rotation is degrees
+
+
 def _sim_send_cmd(cmd: dict):
-    # Real rover speaks differential L/R; the twin is high-level. The only dict
-    # cmd that reaches here is the emergency stop from main()'s finally block.
-    _sim_twin().move_forward(distance=0.0)
+    # Only the emergency stop from main()'s finally block reaches here; nothing
+    # to integrate (the twin holds its last authored pose).
+    pass
 
 
 def _sim_do_action(action: str):
-    twin = _sim_twin()
     if action == "forward":
-        twin.move_forward(distance=config.SIM_STEP_M)
+        _pose["x"] += config.SIM_STEP_M * math.cos(_pose["heading"])
+        _pose["y"] += config.SIM_STEP_M * math.sin(_pose["heading"])
     elif action == "turn_left":
-        twin.turn_left(angle=config.SIM_TURN_RAD)
+        _pose["heading"] += config.SIM_TURN_RAD
     elif action == "turn_right":
-        twin.turn_right(angle=config.SIM_TURN_RAD)
-    else:  # stop, done, back, anything unknown -> halt
-        twin.move_forward(distance=0.0)
+        _pose["heading"] -= config.SIM_TURN_RAD
+    else:  # stop, done, back, unknown -> hold current pose
+        return
+    _sim_apply()
 
 
 # ---------- public ----------
