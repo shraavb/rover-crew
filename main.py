@@ -55,6 +55,10 @@ def main():
     # and centered before 'done' is honoured, so it physically closes the gap.
     min_approach = int(os.environ.get("MIN_APPROACH") or 3)
     approached = 0
+    # Stop-look-move timing: how long to pulse each motion, then how long to let
+    # the camera settle (sharp frame) before deciding again. Tune via env.
+    move_time = float(os.environ.get("MOVE_TIME") or 0.35)
+    settle_time = float(os.environ.get("SETTLE_TIME") or 0.35)
     step = 0
     try:
         while True:
@@ -116,9 +120,14 @@ def main():
                 banner(f"REACHED {target!r} in {step} steps 🎯")
                 break
 
+            # Stop-look-move: pulse the action briefly, then STOP and let the
+            # camera settle before the next loop captures its decision frame.
+            # Driving continuously made every frame motion-blurred, so perception
+            # reported target_visible=False mid-turn and the rover circled forever.
             rover.do_action(action)
-
-            time.sleep(max(0, period - (time.time() - t0)))
+            time.sleep(move_time)
+            rover.send_cmd(config.cmd_stop())
+            time.sleep(settle_time)
     except KeyboardInterrupt:
         print("\ninterrupted")
     finally:
