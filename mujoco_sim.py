@@ -97,9 +97,23 @@ _XML = """
 </mujoco>
 """
 
+import atexit
 import os
 
 _SHOW = os.environ.get("MJC_WINDOW", "1") == "1"  # MJC_WINDOW=0 for headless
+
+
+@atexit.register
+def _hold_window():
+    """Keep the final frame on screen until a keypress, so a run's end state is
+    visible/recordable instead of the window vanishing when the program exits."""
+    if _SHOW and _model is not None:
+        try:
+            print("[sim] done — click the window and press any key to close.")
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+        except cv2.error:
+            pass
 
 _model = None
 _data = None
@@ -126,29 +140,37 @@ def _apply():
     mujoco.mj_forward(_model, _data)
 
 
+def _show(onboard_rgb=None):
+    """Render the chase view (with onboard inset) into the demo window. Called on
+    every frame AND every motion, so deterministic behaviors (e.g. bare 'turn
+    left' that never call perception) still animate the window."""
+    global _SHOW
+    if not _SHOW:
+        return
+    try:
+        if onboard_rgb is None:
+            _cam_onboard.update_scene(_data, camera="onboard")
+            onboard_rgb = _cam_onboard.render()
+        _cam_chase.update_scene(_data, camera="chase")
+        disp = _cam_chase.render().copy()
+        inset = cv2.resize(onboard_rgb, (160, 120))
+        disp[8:128, 8:168] = inset
+        cv2.rectangle(disp, (8, 8), (168, 128), (255, 255, 255), 1)
+        cv2.putText(disp, "onboard (Gemma sees)", (8, 144),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+        cv2.imshow("RoverCrew - MuJoCo", cv2.cvtColor(disp, cv2.COLOR_RGB2BGR))
+        cv2.waitKey(1)
+    except cv2.error:
+        _SHOW = False  # no display available; run headless
+
+
 def get_frame() -> bytes:
     """Render the onboard camera (for the crew) and show a chase window."""
     if _model is None:
         _init()
     _cam_onboard.update_scene(_data, camera="onboard")
     rgb = _cam_onboard.render()  # HxWx3 RGB uint8
-
-    # Demo window: chase view with the onboard view inset top-left.
-    global _SHOW
-    if _SHOW:
-        try:
-            _cam_chase.update_scene(_data, camera="chase")
-            disp = _cam_chase.render().copy()
-            inset = cv2.resize(rgb, (160, 120))
-            disp[8:128, 8:168] = inset
-            cv2.rectangle(disp, (8, 8), (168, 128), (255, 255, 255), 1)
-            cv2.putText(disp, "onboard (Gemma sees)", (8, 144),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-            cv2.imshow("RoverCrew - MuJoCo", cv2.cvtColor(disp, cv2.COLOR_RGB2BGR))
-            cv2.waitKey(1)
-        except cv2.error:
-            _SHOW = False  # no display available; run headless
-
+    _show(rgb)
     ok, buf = cv2.imencode(".jpg", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
     if not ok:
         raise RuntimeError("mujoco frame encode failed")
@@ -174,6 +196,7 @@ def do_action(action: str):
     _pose["x"] = min(7.5, max(-4.5, _pose["x"]))
     _pose["y"] = min(5.5, max(-5.5, _pose["y"]))
     _apply()
+    _show()  # animate the window even for deterministic (no-perception) motions
 
 
 def send_cmd(cmd: dict):
