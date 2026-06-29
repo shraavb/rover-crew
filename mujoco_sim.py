@@ -43,10 +43,11 @@ _XML = """
            diffuse="0.7 0.7 0.7" specular="0.2 0.2 0.2"/>
     <geom name="floor" type="plane" size="18 18 0.1" material="grid"/>
 
-    <!-- distant perimeter walls: backdrop realism, far enough never to block -->
-    <geom type="box" pos="9 1 0.6" size="0.15 9 0.6" material="wall"/>
-    <geom type="box" pos="1 8 0.6" size="9 0.15 0.6" material="wall"/>
-    <geom type="box" pos="1 -7 0.6" size="9 0.15 0.6" material="wall"/>
+    <!-- distant perimeter walls: backdrop realism, beyond the rover bounds -->
+    <geom type="box" pos="9 0 0.6" size="0.15 10 0.6" material="wall"/>
+    <geom type="box" pos="-6 0 0.6" size="0.15 10 0.6" material="wall"/>
+    <geom type="box" pos="1.5 9 0.6" size="10 0.15 0.6" material="wall"/>
+    <geom type="box" pos="1.5 -9 0.6" size="10 0.15 0.6" material="wall"/>
 
     <body name="rover" pos="0 0 0.12">
       <freejoint/>
@@ -168,10 +169,10 @@ def do_action(action: str):
         return
     _pose["x"] += step * math.cos(_pose["heading"])
     _pose["y"] += step * math.sin(_pose["heading"])
-    # Keep the rover within the populated area so a long search arc can't spiral
-    # it off into empty floor where it loses every cup.
-    _pose["x"] = min(6.0, max(-0.6, _pose["x"]))
-    _pose["y"] = min(4.0, max(-4.0, _pose["y"]))
+    # Keep the rover on the floor area. Bounds are wide enough for retreat /
+    # go_around / avoid to drive well clear of the start, but not off the world.
+    _pose["x"] = min(7.5, max(-4.5, _pose["x"]))
+    _pose["y"] = min(5.5, max(-5.5, _pose["y"]))
     _apply()
 
 
