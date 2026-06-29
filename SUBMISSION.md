@@ -6,18 +6,18 @@
 ## Discord post (copy-paste)
 
 - **Project Name:** Roro — always-on voice-commanded home rover
-- **Team Members:** @<your-discord-handle> (Shraavasti Bhat)
-- **Project Description:** Roro is a home rover you talk to. Say *"robot, move
-  toward the orange case"* — local Whisper transcribes it and a Gemma 4 (31B)
-  **intent-parser agent** on Cerebras turns it into a structured command (move
-  toward / away from / around an object, turn, or avoid it). While driving, a
-  Gemma-4 **perception agent** reads the onboard camera every step and a
-  **safety agent** vetoes unsafe moves and steers around obstacles. Roro listens
-  continuously, so you can re-command it mid-motion — *"robot, stop"* — and it
-  switches at the next step. Cerebras' speed is what makes a live speech + vision
-  control loop feel real-time. Runs on a physical Waveshare UGV Beast and in a
-  self-contained MuJoCo simulation.
-- **Demo Video:** (attached, ≤60s)
+- **Team Members:** @shraav_32616 (Shraavasti Bhat)
+- **Project Description:** Roro is a home rover you talk to. Say "robot, move
+  toward the orange case." Local Whisper transcribes it, and a Gemma 4 (31B)
+  intent-parser agent on Cerebras turns it into a structured command (move
+  toward, away from, or around an object, turn, or avoid it). While driving, a
+  Gemma-4 perception agent reads the onboard camera every step, and a safety
+  agent vetoes unsafe moves and steers around obstacles. Roro listens
+  continuously, so you can re-command it mid-motion, like saying "robot, stop,"
+  and it switches at the next step. Cerebras' speed is what makes a live speech
+  and vision control loop feel real-time. It runs on a physical Waveshare UGV
+  Beast and in a self-contained MuJoCo simulation.
+- **Demo Video:** https://youtu.be/9HACQbHyaqE
 - **GitHub Repository:** https://github.com/shraavb/rover-crew
 
 ## How it maps to Track 1 judging

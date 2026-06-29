@@ -11,6 +11,10 @@ control loop** at ~1 second per perceive→plan→act cycle.
 > Cerebras inference is fast enough to run a multimodal agent crew in real time on a
 > moving robot.
 
+**Demo video:** https://youtu.be/9HACQbHyaqE
+
+<img src="assets/roro.jpeg" width="500" alt="Roro rover" />
+
 ## Architecture: split brain / body
 
 ```
