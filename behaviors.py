@@ -88,6 +88,16 @@ def _safe(per: dict, action: str) -> str:
     return action if safe.get("approved") else (safe.get("override") or "stop")
 
 
+def _pulse_search(action: str) -> bool:
+    """Pulse a search turn SEARCH_TURN times for a bigger scan bite (fewer, larger
+    rotations per look). Returns True if a new command interrupted."""
+    for _ in range(max(1, config.SEARCH_TURN)):
+        if aborted():
+            return True
+        _pulse(action)
+    return False
+
+
 def _log(step: int, per: dict, action: str):
     print(f"[{step:03d}] {_last_ms:4.0f}ms gemma-4/cerebras | "
           f"see={per.get('target_visible')} "
@@ -130,7 +140,11 @@ def approach(target: str) -> str:
         if action in ("forward", "veer_left", "veer_right"):
             action = _safe(per, action)
         _log(step, per, action)
-        _pulse(action)
+        if not visible:                              # bigger scan bite while searching
+            if _pulse_search(action):
+                return "preempted"
+        else:
+            _pulse(action)
     banner(f"gave up after {config.MAX_STEPS} steps (no {target!r})")
     return "done"
 
@@ -188,7 +202,11 @@ def go_around(target: str) -> str:
             "turn_" + bearing if bearing in ("left", "right") else "forward")
         action = _safe(per, action)
         _log(step, per, action)
-        _pulse(action)
+        if not visible:                              # bigger scan bite while searching
+            if _pulse_search(action):
+                return "preempted"
+        else:
+            _pulse(action)
     if not found:
         # never located the target -- don't fake an arc around empty space.
         rover.do_action("stop")

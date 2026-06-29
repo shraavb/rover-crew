@@ -77,6 +77,10 @@ MAX_STEPS = int(os.environ.get("MAX_STEPS") or 60)
 MIN_APPROACH = int(os.environ.get("MIN_APPROACH") or 3)
 # First search-turn direction before the target has ever been seen.
 SEARCH_DIR = (os.environ.get("SEARCH_DIR") or "right").lower()
+# Turn pulses per scan step while searching (target not visible). Higher = bigger
+# bites -> a full sweep takes fewer, larger rotations (snappier, fewer Gemma
+# calls) at the cost of possibly skipping a small/far target. 1 = original.
+SEARCH_TURN = int(os.environ.get("SEARCH_TURN") or 2)
 # Turn calibration: how many stop-look-move turn pulses make ~a quarter turn.
 # Tune on hardware (a pulse = TURN_SPEED for MOVE_TIME). 180deg = 2x this.
 TURN_PULSES_90 = int(os.environ.get("TURN_PULSES_90") or 3)
