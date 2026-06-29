@@ -2,6 +2,7 @@
 
 **Track 1: Multiverse Agents (Best Multi-Agent + Multimodal)** — primary
 (Optionally Track 2: People's Choice — also post the video on X, tag @Cerebras @googlegemma.)
+**X post:** https://x.com/ShraavastiB/status/2071549073161887781?s=20
 
 ## Discord post (copy-paste)
 
