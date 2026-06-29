@@ -62,9 +62,16 @@ def aborted() -> bool:
 
 
 # ---------- shared helpers ----------
+_last_ms = 0.0  # wall time of the most recent Gemma-4 vision call (Cerebras speed)
+
+
 def _look(target: str) -> dict:
-    """Capture a (settled) frame and run Gemma perception on it."""
-    return agents.perceive(rover.get_frame(), target)
+    """Capture a (settled) frame and run Gemma perception on it, timing the call."""
+    global _last_ms
+    t = time.time()
+    per = agents.perceive(rover.get_frame(), target)
+    _last_ms = (time.time() - t) * 1000
+    return per
 
 
 def _pulse(action: str):
@@ -82,7 +89,8 @@ def _safe(per: dict, action: str) -> str:
 
 
 def _log(step: int, per: dict, action: str):
-    print(f"[{step:03d}] see={per.get('target_visible')} "
+    print(f"[{step:03d}] {_last_ms:4.0f}ms gemma-4/cerebras | "
+          f"see={per.get('target_visible')} "
           f"bearing={per.get('bearing')} dist={per.get('distance')} "
           f"obs={per.get('obstacle_ahead')} -> DO {action}")
 
