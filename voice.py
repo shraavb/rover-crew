@@ -75,46 +75,56 @@ def transcribe(audio: np.ndarray) -> str:
 INTENTS = ("approach", "retreat", "go_around", "turn", "avoid", "stop", "unknown")
 
 
-def parse_command(text: str) -> dict:
-    """Ask Gemma 4 to turn a spoken command into a structured intent for Roro.
-
-    Returns {"intent", "target", "direction"} where intent is one of INTENTS,
-    target is a short noun phrase ("" for a bare turn), direction is left/right
-    for `turn` (else null). A bare object with no verb -> approach.
-    """
-    prompt = (
-        "You parse spoken commands for a home rover robot named Roro into a "
-        "structured intent.\n"
-        "intent is one of: approach (move toward / go to / find), retreat (move "
-        "away / back away from), go_around (go around / circle / pass), turn "
-        "(turn / rotate / spin), avoid (avoid / stay away from while moving), "
-        "stop (stop / halt), unknown.\n"
-        "target = the object the command refers to, as a short lowercase noun "
-        "phrase with no articles (e.g. 'orange case'); empty string if none.\n"
-        "direction = 'left' or 'right' for a turn command, else null.\n"
-        "A bare object with no verb (e.g. 'orange case') means approach.\n"
-        "Examples:\n"
-        '  "please move away from the orange case" -> {"intent":"retreat","target":"orange case","direction":null}\n'
-        '  "go around the chair" -> {"intent":"go_around","target":"chair","direction":null}\n'
-        '  "turn left at the door" -> {"intent":"turn","target":"door","direction":"left"}\n'
-        '  "spin around" -> {"intent":"turn","target":"","direction":null}\n'
-        '  "avoid the backpack" -> {"intent":"avoid","target":"backpack","direction":null}\n'
-        '  "orange case" -> {"intent":"approach","target":"orange case","direction":null}\n'
-        f'Command: "{text}"\n'
-        'Reply ONLY JSON: {"intent": "...", "target": "...", "direction": "left"|"right"|null}'
-    )
-    out = agents._json_call([{"role": "user", "content": prompt}], max_tokens=60)
-    intent = (out.get("intent") or "unknown").strip().lower()
+def _clean_step(step: dict) -> dict:
+    """Normalize one raw step dict into {intent, target, direction}."""
+    intent = (step.get("intent") or "unknown").strip().lower()
     if intent not in INTENTS:
         intent = "unknown"
-    direction = out.get("direction")
+    direction = step.get("direction")
     if direction not in ("left", "right"):
         direction = None
-    return {
-        "intent": intent,
-        "target": (out.get("target") or "").strip().lower(),
-        "direction": direction,
-    }
+    return {"intent": intent,
+            "target": (step.get("target") or "").strip().lower(),
+            "direction": direction}
+
+
+def parse_command(text: str) -> list[dict]:
+    """Ask Gemma 4 to turn a spoken command into an ORDERED list of steps for Roro.
+
+    A compound command ("go around the basket and to the orange case") becomes
+    multiple steps run in sequence. Each step is {intent, target, direction};
+    intent in INTENTS, target a short noun phrase ("" if none), direction
+    left/right for `turn`. A bare object with no verb -> approach. Always returns
+    a non-empty list (a single command -> one step).
+    """
+    prompt = (
+        "You parse spoken commands for a home rover robot named Roro into an "
+        "ordered list of steps. Split compound commands (joined by 'and', 'then', "
+        "commas) into separate steps IN ORDER.\n"
+        "Each step's intent is one of: approach (move toward / go to / find), "
+        "retreat (move away / back away from), go_around (go around / circle / "
+        "pass), turn (turn / rotate / spin), avoid (avoid / stay away from while "
+        "moving), stop (stop / halt), unknown.\n"
+        "target = the object, a short lowercase noun phrase with no articles "
+        "(e.g. 'orange case'); empty string if none. direction = 'left'/'right' "
+        "for a turn, else null. A bare object with no verb means approach.\n"
+        "Examples:\n"
+        '  "go around the basket and towards the orange case" -> {"steps":['
+        '{"intent":"go_around","target":"basket","direction":null},'
+        '{"intent":"approach","target":"orange case","direction":null}]}\n'
+        '  "please move away from the orange case" -> {"steps":['
+        '{"intent":"retreat","target":"orange case","direction":null}]}\n'
+        '  "turn left then find the door" -> {"steps":['
+        '{"intent":"turn","target":"","direction":"left"},'
+        '{"intent":"approach","target":"door","direction":null}]}\n'
+        '  "orange case" -> {"steps":[{"intent":"approach","target":"orange case","direction":null}]}\n'
+        f'Command: "{text}"\n'
+        'Reply ONLY JSON: {"steps": [{"intent":"...","target":"...","direction":"left"|"right"|null}, ...]}'
+    )
+    out = agents._json_call([{"role": "user", "content": prompt}], max_tokens=160)
+    steps = out.get("steps") or []
+    cleaned = [_clean_step(s) for s in steps if isinstance(s, dict)]
+    return cleaned or [{"intent": "unknown", "target": "", "direction": None}]
 
 
 # Wake word. "robot" transcribes far more reliably than "roro" (heard as "roll").
@@ -169,9 +179,9 @@ def listen_loop(on_command, stop_event, window: float = 3.0):
             # previous window was wake-only; this window IS the command.
             awaiting = False
             print(f"[voice] heard: {text!r}")
-            cmd = parse_command(text)
-            print(f"[voice] command: {cmd}")
-            on_command(cmd)
+            steps = parse_command(text)
+            print(f"[voice] steps: {steps}")
+            on_command(steps)
             continue
         if not hit:
             continue
@@ -181,25 +191,25 @@ def listen_loop(on_command, stop_event, window: float = 3.0):
             continue
         awaiting = False
         print(f"[voice] heard: {text!r}")
-        cmd = parse_command(cmd_text)
-        print(f"[voice] command: {cmd}")
-        on_command(cmd)
+        steps = parse_command(cmd_text)
+        print(f"[voice] steps: {steps}")
+        on_command(steps)
 
 
-def get_command_by_voice() -> dict:
-    """Full pipeline: record -> transcribe -> parse command. intent 'unknown' on failure."""
+def get_command_by_voice() -> list[dict]:
+    """Full pipeline: record -> transcribe -> parse into an ordered step list."""
     audio = record_until_enter()
     text = transcribe(audio)
     if not text:
         print("[voice] heard nothing.")
-        return {"intent": "unknown", "target": "", "direction": None}
+        return [{"intent": "unknown", "target": "", "direction": None}]
     print(f"[voice] heard: {text!r}")
-    cmd = parse_command(text)
-    print(f"[voice] command: {cmd}")
-    return cmd
+    steps = parse_command(text)
+    print(f"[voice] steps: {steps}")
+    return steps
 
 
 if __name__ == "__main__":
     print("Voice command test. Speak after the prompt.")
     c = get_command_by_voice()
-    print(f"\nFINAL COMMAND = {c}")
+    print(f"\nFINAL STEPS = {c}")

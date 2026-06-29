@@ -22,26 +22,31 @@ import rover_client as rover
 import voice
 
 
-def supervise(initial_cmd):
-    """Run behaviors back-to-back, swapping to whatever the listener queues next.
-    initial_cmd runs first (None -> idle until the first 'Roro ...')."""
+def supervise(initial_steps):
+    """Run a queue of steps in order; a new spoken command preempts the current
+    step and replaces the remaining queue. initial_steps runs first (empty ->
+    idle until the first 'robot ...')."""
     stop_event = threading.Event()
     listener = threading.Thread(
         target=voice.listen_loop, args=(behaviors.set_pending, stop_event),
         daemon=True)
     listener.start()
 
-    current = initial_cmd
+    queue = list(initial_steps or [])
     try:
         while True:
-            if current is None:                      # idle: wait for a command
-                while not behaviors.has_pending():
-                    time.sleep(0.2)
-                current = behaviors.take_pending()
-            behaviors.run(current)                   # 'done' or 'preempted'
-            # Pick up a queued command if any (preemption or arrived-during-run);
-            # otherwise go idle and wait for the next "Roro ...".
-            current = behaviors.take_pending()
+            if not queue:                            # idle: wait for a command
+                if behaviors.has_pending():
+                    queue = list(behaviors.take_pending() or [])
+                    continue
+                time.sleep(0.2)
+                continue
+            step = queue.pop(0)
+            if len(queue) >= 0:
+                print(f"[supervisor] step: {step}  ({len(queue)} more queued)")
+            status = behaviors.run(step)             # 'done' or 'preempted'
+            if status == "preempted":                # new command replaces the rest
+                queue = list(behaviors.take_pending() or [])
     except KeyboardInterrupt:
         print("\nshutting down")
     finally:
@@ -64,7 +69,7 @@ def main():
 
     # `voice` -> pure always-on (idle until first wake word). Any other text is an
     # initial command; the always-on listener still runs so you can interrupt it.
-    initial = None if arg == "voice" else voice.parse_command(arg)
+    initial = [] if arg == "voice" else voice.parse_command(arg)
     if initial:
         behaviors.banner(f"COMMAND: {initial}")
     supervise(initial)

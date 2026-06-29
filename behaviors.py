@@ -34,21 +34,22 @@ _pending = None
 _lock = threading.Lock()
 
 
-def set_pending(cmd: dict):
-    """Queue a new command and signal the running behavior to abort (thread-safe)."""
+def set_pending(steps):
+    """Queue a new command (a list of step dicts) and signal the running behavior
+    to abort so the supervisor can switch to it (thread-safe). Latest wins."""
     global _pending
     with _lock:
-        _pending = cmd
+        _pending = steps
     _interrupt.set()
 
 
 def take_pending():
-    """Pop the queued command (or None) and clear the interrupt."""
+    """Pop the queued step list (or None) and clear the interrupt."""
     global _pending
     with _lock:
-        cmd, _pending = _pending, None
+        steps, _pending = _pending, None
     _interrupt.clear()
-    return cmd
+    return steps
 
 
 def has_pending() -> bool:
