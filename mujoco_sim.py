@@ -28,18 +28,32 @@ _XML = """
     <material name="grid" texture="grid" texrepeat="12 12" reflectance="0.1"/>
   </asset>
   <worldbody>
-    <light pos="1 -1 4" dir="0 0 -1" diffuse="1 1 1"/>
-    <geom name="floor" type="plane" size="12 12 0.1" material="grid"/>
+    <light pos="1 -1 5" dir="0 0 -1" diffuse="1 1 1"/>
+    <geom name="floor" type="plane" size="14 14 0.1" material="grid"/>
     <body name="rover" pos="0 0 0.12">
       <freejoint/>
       <geom type="box" size="0.22 0.16 0.10" rgba="0.2 0.45 0.95 1"/>
       <geom type="box" size="0.05 0.17 0.02" pos="0.18 0 0.06" rgba="0.1 0.1 0.1 1"/>
       <camera name="onboard" pos="0.22 0 0.16" xyaxes="0 -1 0 0 0 1"/>
     </body>
-    <body name="target" pos="4.5 0.0 0.25">
-      <geom type="box" size="0.18 0.18 0.25" rgba="0.9 0.1 0.1 1"/>
+
+    <!-- TARGET: red cup, off to the left so the rover must search to find it -->
+    <body name="target" pos="3.0 1.5 0.25">
+      <geom type="cylinder" size="0.20 0.25" rgba="0.9 0.1 0.1 1"/>
     </body>
-    <camera name="chase" mode="trackcom" pos="1.0 -4.5 3.5"/>
+
+    <!-- DISTRACTORS: same shape, different colours -> Gemma must discriminate -->
+    <body name="distractor_green" pos="2.6 0.0 0.22">
+      <geom type="cylinder" size="0.16 0.22" rgba="0.15 0.75 0.2 1"/>
+    </body>
+    <body name="distractor_blue" pos="3.2 -2.4 0.22">
+      <geom type="cylinder" size="0.16 0.22" rgba="0.15 0.3 0.9 1"/>
+    </body>
+    <body name="distractor_yellow" pos="1.4 1.7 0.22">
+      <geom type="cylinder" size="0.16 0.22" rgba="0.9 0.8 0.1 1"/>
+    </body>
+
+    <camera name="chase" mode="trackcom" pos="2.0 -5.5 4.5"/>
   </worldbody>
 </mujoco>
 """
@@ -105,15 +119,17 @@ def get_frame() -> bytes:
 def do_action(action: str):
     if _model is None:
         _init()
-    if action == "forward":
-        _pose["x"] += config.SIM_STEP_M * math.cos(_pose["heading"])
-        _pose["y"] += config.SIM_STEP_M * math.sin(_pose["heading"])
-    elif action == "turn_left":
+    step = config.SIM_STEP_M
+    if action == "turn_left":
         _pose["heading"] += config.SIM_TURN_RAD
-    elif action == "turn_right":
+        step *= 0.5            # turns also advance (arc), so the rover always
+    elif action == "turn_right":  # closes distance instead of spinning in place
         _pose["heading"] -= config.SIM_TURN_RAD
-    else:  # stop, done, back, unknown -> hold
+        step *= 0.5
+    elif action != "forward":  # stop, done, back, unknown -> hold
         return
+    _pose["x"] += step * math.cos(_pose["heading"])
+    _pose["y"] += step * math.sin(_pose["heading"])
     _apply()
 
 

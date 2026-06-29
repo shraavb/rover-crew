@@ -90,7 +90,9 @@ def perceive(jpg: bytes, target: str) -> dict:
         f'Target object: "{target}".\n'
         "Report ONLY what you clearly see. Be conservative.\n"
         "- target_visible: true ONLY if you are confident the target is in frame.\n"
-        "- bearing: which third of the frame the target is in (left/center/right), else none.\n"
+        "- bearing: center if the target is anywhere in the middle ~60% of the frame; "
+        "left or right ONLY if it is clearly near that edge; none if not visible. "
+        "(Prefer center when in doubt so the rover drives forward rather than wobbling.)\n"
         "- distance: near if it fills much of the frame, far if tiny, mid otherwise.\n"
         "- obstacle_ahead: true ONLY if a large object/wall (NOT the target) is close and "
         "directly blocking forward motion within ~1 rover-length. The TARGET object itself "
@@ -121,9 +123,10 @@ def plan(perception: dict, target: str) -> dict:
     prompt = (
         f'You are the PLANNER agent. Goal: drive the rover to the "{target}".\n'
         f"Perception report: {json.dumps(perception)}\n"
-        "Rules: if target not visible, turn to search. If visible & off-center, "
-        "turn toward its bearing. If visible & centered & not near, go forward. "
-        "If visible, centered, and near -> done.\n"
+        "Rules (check in order): if visible AND near -> done (you have arrived; "
+        "exact centering is NOT required once near). If not visible -> turn to "
+        "search. If visible, not near, and off-center -> turn toward its bearing. "
+        "If visible, not near, and centered -> forward.\n"
         'Reply ONLY JSON: {"action": "forward"|"turn_left"|"turn_right"|"stop"|"done", '
         '"reason": "<8-word reason>"}'
     )
@@ -180,10 +183,10 @@ def critique(perception: dict, plan_out: dict, target: str) -> dict:
         f'You are the CRITIC agent. Goal: reach the "{target}".\n'
         f"Perception: {json.dumps(perception)}\n"
         f"Planner proposed: {json.dumps(plan_out)}\n"
-        "Sanity-check the action against perception and the goal. Correct it if "
-        "the planner erred (e.g. forward while the target is off-center, "
-        "searching while the target is centered, or done when not near). "
-        "Otherwise keep it.\n"
+        "Sanity-check the action against perception and the goal. If the target "
+        "is NEAR, `done` is correct regardless of bearing (do not turn in place "
+        "next to it). Correct the planner if it erred (e.g. forward while far and "
+        "off-center, or searching while the target is centered). Otherwise keep it.\n"
         'Reply ONLY JSON: {"action": "forward"|"turn_left"|"turn_right"|"stop"|"done", '
         '"reason": "<8-word reason>", "changed": true/false}'
     )

@@ -7,6 +7,7 @@ Runs the agent crew at ~LOOP_HZ. Cerebras speed = real-time embodied agents.
     # real rover (set ROVER_HOST in config.py, pi_server.py running on the Pi):
     ./.venv/bin/python main.py "red cup"
 """
+import os
 import sys
 import time
 
@@ -37,10 +38,15 @@ def main():
     )
 
     period = 1.0 / config.LOOP_HZ
+    max_steps = int(os.environ.get("MAX_STEPS") or 60)
     step = 0
     try:
         while True:
             step += 1
+            if step > max_steps:
+                banner(f"stopped after {max_steps} steps (no '{target}' reached)")
+                rover.do_action("stop")
+                break
             t0 = time.time()
 
             jpg = rover.get_frame()

@@ -35,7 +35,8 @@ CW_TWIN = "waveshare/ugv-beast"
 # no '/', so the SDK won't resolve it). Env var wins.
 CW_ENV = os.environ.get("CYBERWAVE_ENVIRONMENT_ID") or "shraavasti-bhats-workspace/ugv-rover"
 SIM_STEP_M = 0.3      # metres per forward step   (SDK caps at 1.0)
-SIM_TURN_RAD = 0.5    # radians per turn step     (SDK caps at pi)
+SIM_TURN_RAD = 0.35   # radians per turn step (small enough to avoid overshoot
+                      # oscillation when centering on an off-axis target)
 # SIM_MOCK_FRAME=1 -> use the SDK's deterministic placeholder frame instead of a
 # real render. Validates the loop plumbing when the sim isn't rendering yet.
 SIM_MOCK_FRAME = os.environ.get("SIM_MOCK_FRAME") == "1"
