@@ -22,6 +22,11 @@ def banner(s):
 
 def main():
     target = sys.argv[1] if len(sys.argv) > 1 else "red cup"
+    # Voice mode: `main.py voice` (or VOICE=1) -> speak the command, Whisper
+    # transcribes, Gemma extracts the target ("go towards the orange case").
+    if target == "voice" or os.environ.get("VOICE") == "1":
+        import voice
+        target = voice.get_target_by_voice() or "red cup"
     banner(f"MISSION: find the {target!r}")
     body = {"sim": "Cyberwave UGV Beast (digital twin)",
             "mjc": "MuJoCo simulation (onboard camera)",
@@ -83,17 +88,16 @@ def main():
             if not per.get("target_visible") and action in ("turn_left", "turn_right"):
                 action = search_dir
 
-            # Face the target before finishing: 'done' fires on 'near' regardless
-            # of bearing, so an off-center target would otherwise never trigger a
-            # turn (and could deadlock against a safety stop). Turn toward it first.
-            if action == "done" and per.get("target_visible") and bearing in ("left", "right"):
-                action = "turn_" + bearing
-            # Force a real approach: don't accept 'done' until we've driven a few
-            # forward steps toward a centered target (overrides premature 'near').
-            if (action == "done" and per.get("target_visible")
-                    and bearing in ("center", None) and approached < min_approach
-                    and not per.get("obstacle_ahead")):
-                action = "forward"
+            # Refine 'done' ONLY while the target is not yet near. Once perception
+            # says 'near', accept 'done' regardless of bearing -- forcing more
+            # turns/forwards at that point makes the rover overshoot and orbit the
+            # target (it loses it, re-searches, reacquires on the other side...).
+            dist = per.get("distance")
+            if action == "done" and per.get("target_visible") and dist in ("mid", "far"):
+                if bearing in ("left", "right"):
+                    action = "turn_" + bearing               # face it first
+                elif approached < min_approach and not per.get("obstacle_ahead"):
+                    action = "forward"                       # close the gap
             if action == "forward":
                 approached += 1
 

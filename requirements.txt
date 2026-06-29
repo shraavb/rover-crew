@@ -5,3 +5,5 @@ opencv-python
 flask
 pyserial
 mujoco
+faster-whisper
+sounddevice
