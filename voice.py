@@ -14,6 +14,7 @@ Standalone test:
 """
 import json
 import sys
+import os
 import threading
 import queue
 
@@ -116,9 +117,11 @@ def parse_command(text: str) -> dict:
     }
 
 
-# Wake word + common Whisper mishearings of "Roro".
-WAKE_WORDS = ("roro", "ro ro", "ro-ro", "rover", "roto", "roaro", "rolo",
-              "roar", "oro", "yoyo", "lolo", "robo")
+# Wake word. "robot" transcribes far more reliably than "roro" (heard as "roll").
+# Override with WAKE_WORD=<word>. The extras catch common Whisper mishearings.
+_WAKE = (os.environ.get("WAKE_WORD") or "robot").lower()
+WAKE_WORDS = tuple(dict.fromkeys(
+    (_WAKE, "robot", "robo", "row bot", "roboat", "hey robot")))
 
 
 def _strip_wake(text: str) -> str:
@@ -148,7 +151,9 @@ def listen_loop(on_command, stop_event, window: float = 3.0):
     with the wake word 'Roro', parse the rest as a command and hand it to
     on_command(cmd). Runs until stop_event is set. Meant to run in a thread."""
     _get_model()  # warm the model before announcing readiness
-    print("[voice] 👂 always-on: say 'Roro <command>' anytime")
+    wake = WAKE_WORDS[0]
+    print(f"[voice] 👂 always-on: say '{wake} <command>' anytime")
+    awaiting = False  # heard the wake word, waiting for the command in next window
     while not stop_event.is_set():
         audio = _record_window(window)
         if stop_event.is_set():
@@ -157,12 +162,24 @@ def listen_loop(on_command, stop_event, window: float = 3.0):
         if not text:
             continue
         low = text.lower()
-        if not any(w in low for w in WAKE_WORDS):
+        hit = any(w in low for w in WAKE_WORDS)
+        if os.environ.get("DEBUG_VOICE") == "1":
+            print(f"[voice:debug] {text!r} {'(WAKE)' if hit else ''}")
+        if awaiting and not hit:
+            # previous window was wake-only; this window IS the command.
+            awaiting = False
+            print(f"[voice] heard: {text!r}")
+            cmd = parse_command(text)
+            print(f"[voice] command: {cmd}")
+            on_command(cmd)
+            continue
+        if not hit:
             continue
         cmd_text = _strip_wake(text)
         if not cmd_text:
-            print(f"[voice] (wake only: {text!r})")
+            awaiting = True            # wake word alone -> command comes next
             continue
+        awaiting = False
         print(f"[voice] heard: {text!r}")
         cmd = parse_command(cmd_text)
         print(f"[voice] command: {cmd}")
