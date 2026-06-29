@@ -194,9 +194,14 @@ def go_around(target: str) -> str:
         rover.do_action("stop")
         banner(f"could not find {target!r} to go around")
         return "done"
-    # phase 2: arc around -- turn out, drive past, turn back, drive past
-    for seq in ([turn_to] * config.TURN_PULSES_90 + ["forward"] * 3
-                + [turn_back] * config.TURN_PULSES_90 + ["forward"] * 2):
+    # phase 2: arc around. Turn out WIDE first so the drive-past clears the
+    # target instead of clipping it (the rover was bumping the basket before
+    # going around). AROUND_EXTRA_TURN widens the turn-out; AROUND_PAST is how
+    # far to drive alongside.
+    out = config.TURN_PULSES_90 + int(os.environ.get("AROUND_EXTRA_TURN") or 2)
+    past = int(os.environ.get("AROUND_PAST") or 3)
+    for seq in ([turn_to] * out + ["forward"] * past
+                + [turn_back] * out + ["forward"] * past):
         if aborted():
             return "preempted"
         _pulse(_safe(_look(target), seq) if seq == "forward" else seq)
