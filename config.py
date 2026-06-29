@@ -65,6 +65,22 @@ MOVE_PULSE_SEC = 0.6          # how long each motion command runs before re-look
 TURN_SPEED = 0.25             # wheel speed for turning (m/s-ish, tune)
 FWD_SPEED = 0.25              # wheel speed forward
 
+# ---- Stop-look-move timing (shared by every behavior in behaviors.py) ----
+# Each step pulses one motion for MOVE_TIME, stops, then waits SETTLE_TIME so the
+# camera frame used for the NEXT decision is sharp (continuous driving blurred
+# every frame and perception went blind). Env-overridable.
+MOVE_TIME = float(os.environ.get("MOVE_TIME") or 0.35)
+SETTLE_TIME = float(os.environ.get("SETTLE_TIME") or 0.35)
+MAX_STEPS = int(os.environ.get("MAX_STEPS") or 60)
+# Forward approach steps forced while the target is mid/far before 'done' is
+# honoured (Gemma over-reports 'near', else the rover stops across the room).
+MIN_APPROACH = int(os.environ.get("MIN_APPROACH") or 3)
+# First search-turn direction before the target has ever been seen.
+SEARCH_DIR = (os.environ.get("SEARCH_DIR") or "right").lower()
+# Turn calibration: how many stop-look-move turn pulses make ~a quarter turn.
+# Tune on hardware (a pulse = TURN_SPEED for MOVE_TIME). 180deg = 2x this.
+TURN_PULSES_90 = int(os.environ.get("TURN_PULSES_90") or 3)
+
 # ---- Waveshare UGV serial command map (VERIFY against your model's JSON cmd set) ----
 # Waveshare UGV uses JSON over serial to the ESP32 sub-controller.
 # T:1 = differential speed control, L=left wheels, R=right wheels.

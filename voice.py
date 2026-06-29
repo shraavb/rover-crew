@@ -71,33 +71,65 @@ def transcribe(audio: np.ndarray) -> str:
     return " ".join(s.text for s in segments).strip()
 
 
-def extract_target(text: str) -> str:
-    """Ask Gemma 4 for the object the user wants the rover to go to."""
+INTENTS = ("approach", "retreat", "go_around", "turn", "avoid", "stop", "unknown")
+
+
+def parse_command(text: str) -> dict:
+    """Ask Gemma 4 to turn a spoken command into a structured intent for Roro.
+
+    Returns {"intent", "target", "direction"} where intent is one of INTENTS,
+    target is a short noun phrase ("" for a bare turn), direction is left/right
+    for `turn` (else null). A bare object with no verb -> approach.
+    """
     prompt = (
-        "A user spoke a command to a rover. Extract ONLY the target object it "
-        "should drive to, as a short noun phrase (e.g. 'orange case', 'red cup'). "
-        "Lowercase, no articles, no verbs.\n"
+        "You parse spoken commands for a home rover robot named Roro into a "
+        "structured intent.\n"
+        "intent is one of: approach (move toward / go to / find), retreat (move "
+        "away / back away from), go_around (go around / circle / pass), turn "
+        "(turn / rotate / spin), avoid (avoid / stay away from while moving), "
+        "stop (stop / halt), unknown.\n"
+        "target = the object the command refers to, as a short lowercase noun "
+        "phrase with no articles (e.g. 'orange case'); empty string if none.\n"
+        "direction = 'left' or 'right' for a turn command, else null.\n"
+        "A bare object with no verb (e.g. 'orange case') means approach.\n"
+        "Examples:\n"
+        '  "please move away from the orange case" -> {"intent":"retreat","target":"orange case","direction":null}\n'
+        '  "go around the chair" -> {"intent":"go_around","target":"chair","direction":null}\n'
+        '  "turn left at the door" -> {"intent":"turn","target":"door","direction":"left"}\n'
+        '  "spin around" -> {"intent":"turn","target":"","direction":null}\n'
+        '  "avoid the backpack" -> {"intent":"avoid","target":"backpack","direction":null}\n'
+        '  "orange case" -> {"intent":"approach","target":"orange case","direction":null}\n'
         f'Command: "{text}"\n'
-        'Reply ONLY JSON: {"target": "<noun phrase>"}'
+        'Reply ONLY JSON: {"intent": "...", "target": "...", "direction": "left"|"right"|null}'
     )
-    out = agents._json_call([{"role": "user", "content": prompt}], max_tokens=40)
-    return (out.get("target") or "").strip()
+    out = agents._json_call([{"role": "user", "content": prompt}], max_tokens=60)
+    intent = (out.get("intent") or "unknown").strip().lower()
+    if intent not in INTENTS:
+        intent = "unknown"
+    direction = out.get("direction")
+    if direction not in ("left", "right"):
+        direction = None
+    return {
+        "intent": intent,
+        "target": (out.get("target") or "").strip().lower(),
+        "direction": direction,
+    }
 
 
-def get_target_by_voice() -> str:
-    """Full pipeline: record -> transcribe -> extract target. Returns "" on failure."""
+def get_command_by_voice() -> dict:
+    """Full pipeline: record -> transcribe -> parse command. intent 'unknown' on failure."""
     audio = record_until_enter()
     text = transcribe(audio)
     if not text:
         print("[voice] heard nothing.")
-        return ""
+        return {"intent": "unknown", "target": "", "direction": None}
     print(f"[voice] heard: {text!r}")
-    target = extract_target(text)
-    print(f"[voice] target: {target!r}")
-    return target
+    cmd = parse_command(text)
+    print(f"[voice] command: {cmd}")
+    return cmd
 
 
 if __name__ == "__main__":
     print("Voice command test. Speak after the prompt.")
-    t = get_target_by_voice()
-    print(f"\nFINAL TARGET = {t!r}")
+    c = get_command_by_voice()
+    print(f"\nFINAL COMMAND = {c}")
