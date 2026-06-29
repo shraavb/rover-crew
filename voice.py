@@ -26,6 +26,27 @@ import agents  # reuse the Cerebras client + _json_call
 
 SAMPLE_RATE = 16000          # Whisper wants 16 kHz mono
 WHISPER_MODEL = "base.en"    # good speed/accuracy on CPU; override via env
+# How long each always-on listen window records. Longer = room for longer
+# commands but slower preemption. Override with LISTEN_WINDOW=<seconds>.
+LISTEN_WINDOW = float(os.environ.get("LISTEN_WINDOW") or 4.5)
+
+
+def _mic_device():
+    """Input device index for MIC=<name substring> (e.g. MIC='MacBook'); else the
+    system default. Bluetooth headsets (AirPods/Powerbeats) often capture silence
+    -- set MIC='MacBook Pro Microphone' if the listener hears nothing."""
+    name = os.environ.get("MIC")
+    if not name:
+        return None
+    for i, d in enumerate(sd.query_devices()):
+        if d["max_input_channels"] > 0 and name.lower() in d["name"].lower():
+            print(f"[voice] mic: {d['name']}")
+            return i
+    print(f"[voice] MIC {name!r} not found; using system default")
+    return None
+
+
+_MIC = _mic_device()
 
 _model = None
 
@@ -52,7 +73,8 @@ def record_until_enter() -> np.ndarray:
         frames.put(indata.copy())
 
     print("[voice] 🎤 recording... press Enter to stop.")
-    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32", callback=cb):
+    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
+                        callback=cb, device=_MIC):
         input()  # block until Enter
     print("[voice] ...stopped, transcribing.")
 
@@ -149,20 +171,22 @@ def _strip_wake(text: str) -> str:
 
 
 def _record_window(seconds: float) -> np.ndarray:
-    """Record a fixed-length mono 16 kHz window from the default mic."""
+    """Record a fixed-length mono 16 kHz window from the chosen mic."""
     audio = sd.rec(int(seconds * SAMPLE_RATE), samplerate=SAMPLE_RATE,
-                   channels=1, dtype="float32")
+                   channels=1, dtype="float32", device=_MIC)
     sd.wait()
     return audio.flatten()
 
 
-def listen_loop(on_command, stop_event, window: float = 3.0):
+def listen_loop(on_command, stop_event, window: float = None):
     """Always-on listener: transcribe rolling windows, and when a window starts
     with the wake word 'Roro', parse the rest as a command and hand it to
     on_command(cmd). Runs until stop_event is set. Meant to run in a thread."""
+    if window is None:
+        window = LISTEN_WINDOW
     _get_model()  # warm the model before announcing readiness
     wake = WAKE_WORDS[0]
-    print(f"[voice] 👂 always-on: say '{wake} <command>' anytime")
+    print(f"[voice] 👂 always-on ({window:.0f}s windows): say '{wake} <command>' anytime")
     awaiting = False  # heard the wake word, waiting for the command in next window
     while not stop_event.is_set():
         audio = _record_window(window)

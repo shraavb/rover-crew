@@ -15,6 +15,10 @@ cd "$(dirname "$0")"
 MODE="${1:-real}"; shift || true
 CMD="${*:-voice}"
 
+# Bluetooth mics (AirPods/Powerbeats) often capture silence -> default to the
+# built-in mic so voice works out of the box. Override with MIC=<name substring>.
+export MIC="${MIC:-MacBook Pro Microphone}"
+
 if [ "$MODE" = "sim" ]; then
   export USE_MJC=1 MAX_RPM=600 MOVE_TIME=0.4 SETTLE_TIME=0.2 CLOSE_STEPS=1
   BODY="MuJoCo simulation (onboard camera)"
