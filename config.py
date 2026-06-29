@@ -15,7 +15,7 @@ except ImportError:
 
 # ---- Networking ----
 # IP of the rover's Raspberry Pi on your WiFi (run `hostname -I` on the Pi).
-ROVER_HOST = "192.168.1.50"   # <-- CHANGE ME
+ROVER_HOST = "10.0.0.194"   # Waveshare UGV Beast Pi (ugvrpi.local) on home wifi
 ROVER_PORT = 5000
 
 # ---- Model ----
