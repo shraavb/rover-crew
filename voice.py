@@ -25,7 +25,7 @@ import config  # loads .env / env first
 import agents  # reuse the Cerebras client + _json_call
 
 SAMPLE_RATE = 16000          # Whisper wants 16 kHz mono
-WHISPER_MODEL = "base.en"    # good speed/accuracy on CPU; override via env
+WHISPER_MODEL = "tiny.en"    # fast load + transcribe on CPU; WHISPER_MODEL=base.en for accuracy
 # How long each always-on listen window records. Longer = room for longer
 # commands but slower preemption. Override with LISTEN_WINDOW=<seconds>.
 LISTEN_WINDOW = float(os.environ.get("LISTEN_WINDOW") or 4.5)
