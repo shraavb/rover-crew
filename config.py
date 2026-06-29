@@ -83,7 +83,7 @@ TURN_PULSES_90 = int(os.environ.get("TURN_PULSES_90") or 3)
 # Final close-in: Gemma calls 'near' ~20cm out; drive this many extra short
 # forward pulses once near+centered to finish ~5-10cm from the target. Tune up
 # for closer, down (0) to stop as soon as 'near'.
-CLOSE_STEPS = int(os.environ.get("CLOSE_STEPS") or 2)
+CLOSE_STEPS = int(os.environ.get("CLOSE_STEPS") or 1)
 
 # ---- Waveshare UGV serial command map (VERIFY against your model's JSON cmd set) ----
 # Waveshare UGV uses JSON over serial to the ESP32 sub-controller.
