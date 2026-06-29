@@ -22,14 +22,14 @@ import rover_client as rover
 import voice
 
 
-def supervise(initial_steps):
+def supervise(initial_steps, listen=voice.listen_loop):
     """Run a queue of steps in order; a new spoken command preempts the current
     step and replaces the remaining queue. initial_steps runs first (empty ->
-    idle until the first 'robot ...')."""
+    idle until the first command). `listen` is the listener loop (always-on or
+    push-to-talk)."""
     stop_event = threading.Event()
     listener = threading.Thread(
-        target=voice.listen_loop, args=(behaviors.set_pending, stop_event),
-        daemon=True)
+        target=listen, args=(behaviors.set_pending, stop_event), daemon=True)
     listener.start()
 
     queue = list(initial_steps or [])
@@ -67,12 +67,17 @@ def main():
     agents._create(model=config.MODEL,
                    messages=[{"role": "user", "content": "ready?"}], max_tokens=5)
 
-    # `voice` -> pure always-on (idle until first wake word). Any other text is an
-    # initial command; the always-on listener still runs so you can interrupt it.
-    initial = [] if arg == "voice" else voice.parse_command(arg)
-    if initial:
+    # `voice` -> always-on wake word; `ptt` -> push-to-talk (Enter to start/stop).
+    # Any other text is an initial command; the listener still runs so you can
+    # interrupt it by voice.
+    if arg in ("voice", "ptt"):
+        listen = voice.ptt_loop if arg == "ptt" else voice.listen_loop
+        initial = []
+    else:
+        listen = voice.listen_loop
+        initial = voice.parse_command(arg)
         behaviors.banner(f"COMMAND: {initial}")
-    supervise(initial)
+    supervise(initial, listen)
 
 
 if __name__ == "__main__":

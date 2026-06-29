@@ -226,6 +226,31 @@ def listen_loop(on_command, stop_event, window: float = None):
             on_command(steps)
 
 
+def ptt_loop(on_command, stop_event):
+    """Push-to-talk listener: press Enter to start, speak, press Enter to stop.
+    No wake word needed (the key press is the trigger). Parses the utterance and
+    hands the steps to on_command. Runs in a thread until stop_event is set."""
+    _get_model()
+    print("[voice] ⌨️  push-to-talk: press Enter, speak, press Enter again "
+          "(no wake word needed). Ctrl-C to quit.")
+    while not stop_event.is_set():
+        try:
+            input("\n[voice] press Enter to speak> ")
+        except EOFError:
+            break
+        if stop_event.is_set():
+            break
+        audio = record_until_enter()                 # records until the next Enter
+        text = transcribe(audio)
+        if not text:
+            print("[voice] heard nothing.")
+            continue
+        print(f"[voice] heard: {text!r}")
+        steps = parse_command(_strip_wake(text) or text)
+        print(f"[voice] steps: {steps}")
+        on_command(steps)
+
+
 def get_command_by_voice() -> list[dict]:
     """Full pipeline: record -> transcribe -> parse into an ordered step list."""
     audio = record_until_enter()
